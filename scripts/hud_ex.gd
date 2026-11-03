@@ -1,0 +1,500 @@
+class_name HudEx
+extends Hud
+## واجهة محسّنة:
+## - القائمة الرئيسية بعبارة «صنع في العراق» فقط، وشاشة اللعب نظيفة بلا شعار ولا علم
+## - زر إيقاف دائري بأيقونة ⏸ وقائمة إيقاف احترافية، والصوت يُضبط من الإعدادات فقط
+## - إعدادات مختصرة: الصوت، جودة الرسوميات، معدل الإطارات (تُطبَّق فعلياً)، وسجل التشغيل للدعم
+## - معاينة الوحدات تُؤطَّر تلقائياً (إصلاح ظهور الجنود في الثكنة)
+## - «سجل التشغيل» داخل الإعدادات: يعرض أخطاء اللعبة ويمكن نسخه وإرساله للمطوّر
+
+var gfx_quality_btns: Array = []
+var gfx_fps_btns: Array = []
+var lbl_quality_hint: Label
+var fps_lbl: Label
+var lbl_fps_live: Label
+var lbl_fps_hint: Label
+var fps_toggle_btn: Button
+var log_box: Control
+var log_lbl: Label
+
+
+# أيقونة الإيقاف: شريطان رأسيان
+class PauseIcon extends Control:
+	func _ready() -> void:
+		resized.connect(queue_redraw)
+
+	func _draw() -> void:
+		var bw: float = size.x * 0.13
+		var bh: float = size.y * 0.42
+		var y0: float = (size.y - bh) * 0.5
+		var gap: float = size.x * 0.09
+		var col := Color(0.97, 0.92, 0.78)
+		draw_rect(Rect2(size.x * 0.5 - gap - bw, y0, bw, bh), col)
+		draw_rect(Rect2(size.x * 0.5 + gap, y0, bw, bh), col)
+
+
+# ---------- شاشة اللعب: بلا شعار، وزر إيقاف احترافي ----------
+func _build_hud() -> void:
+	super._build_hud()
+	for c in hud_root.get_children():
+		if c is IraqBadge:
+			c.queue_free()
+		elif c is Label and (c as Label).text == "v" + Data.VERSION:
+			c.queue_free()
+		elif c is HBoxContainer:
+			var has_pause := false
+			for b in c.get_children():
+				if b is Button and (b as Button).text == "إيقاف":
+					has_pause = true
+			if has_pause:
+				for b in c.get_children():
+					b.queue_free()
+				c.add_child(_pause_button())
+	# علامة «صنع في العراق» المميزة أسفل اليمين (لا تعترض اللمس)
+	var mk_script = load("res://scripts/iraq_mark.gd")
+	var mk: Control
+	if mk_script != null and mk_script.can_instantiate():
+		mk = mk_script.new().setup()
+	else:
+		mk = _lbl("صنع في العراق", 26, GOLD)
+		mk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mk.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	mk.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	mk.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	mk.offset_right = -12
+	mk.offset_bottom = -10
+	mk.offset_left = -12 - 268
+	mk.offset_top = -10 - 74
+	hud_root.add_child(mk)
+	# شريط البناء قابل للتمرير الأفقي (مبانٍ كثيرة)، ويترك مكاناً للعلامة أسفل اليمين
+	var par: Node = panel.get_parent()
+	var sc := ScrollContainer.new()
+	sc.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	sc.offset_left = 190
+	sc.offset_right = -292
+	sc.offset_top = -108
+	sc.offset_bottom = -8
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	par.remove_child(panel)
+	sc.add_child(panel)
+	par.add_child(sc)
+	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	panel.custom_minimum_size = Vector2(0, 92)
+	panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	ui_nodes.append(sc)
+	GameSettings.load_cfg()
+	fps_lbl = _lbl("", 16, Color(0.8, 0.95, 0.8))
+	fps_lbl.position = Vector2(14, 8)
+	fps_lbl.visible = GameSettings.show_fps
+	hud_root.add_child(fps_lbl)
+	var tm := Timer.new()
+	tm.wait_time = 0.5
+	tm.process_mode = Node.PROCESS_MODE_ALWAYS
+	tm.timeout.connect(_tick_fps)
+	add_child(tm)
+	tm.start()
+
+
+func _tick_fps() -> void:
+	var f: int = int(Engine.get_frames_per_second())
+	if fps_lbl != null and fps_lbl.visible:
+		fps_lbl.text = "%d FPS" % f
+	if lbl_fps_live != null and settings_box != null and settings_box.visible:
+		lbl_fps_live.text = "المعدل الحالي: %d إطار/ث" % f
+
+
+func _pause_button() -> Button:
+	var b := _btn("", func(): g.pause_game(), Vector2(60, 60), 15)
+	b.add_theme_stylebox_override("normal", _style(INK, GOLD, 30, 2))
+	b.add_theme_stylebox_override("hover", _style(Color(0.12, 0.16, 0.18, 0.98), GOLD.lightened(0.2), 30, 2))
+	b.add_theme_stylebox_override("pressed", _style(Color(0.2, 0.24, 0.22, 0.98), Color.WHITE, 30, 2))
+	var ic := PauseIcon.new()
+	ic.set_anchors_preset(Control.PRESET_FULL_RECT)
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(ic)
+	b.pressed.connect(func(): Sfx.play("click"))
+	return b
+
+
+func toast(msg: String, secs := 1.8) -> void:
+	var m: String = msg
+	if msg == "اجمع الذهب بالشاحنات ودمّر مقرات العدو":
+		var soldiers := 0
+		var trucks := 0
+		for u in g.units:
+			if u.team == 0 and not u.dead:
+				if u.is_truck:
+					trucks += 1
+				else:
+					soldiers += 1
+		m = "هديتك: %d جنود و%d شاحنة ذهب. درّب المزيد حسب ذهبك" % [soldiers, trucks]
+	super.toast(m, 4.0 if m != msg else secs)
+
+
+# ---------- قائمة الإيقاف ----------
+func _build_overlays() -> void:
+	super._build_overlays()
+	var old_idx: int = pause_box.get_index()
+	pause_box.queue_free()
+	pause_box = _build_pause_menu()
+	move_child(pause_box, old_idx)
+	pause_box.visible = false
+
+
+func _pbtn(text: String, cb: Callable, sz: Vector2, fs: int, sound := true) -> Button:
+	var b := _btn(text, cb, sz, fs)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if sound:
+		b.pressed.connect(func(): Sfx.play("click"))
+	return b
+
+
+func _pause_head(text: String) -> Label:
+	var l := _lbl(text, 17, Color(0.74, 0.86, 0.82))
+	return l
+
+
+func _build_pause_menu() -> Control:
+	var bg := ColorRect.new()
+	bg.color = Color(0.02, 0.04, 0.08, 0.8)
+	_full(bg)
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(bg)
+	var cc := CenterContainer.new()
+	_full(cc)
+	bg.add_child(cc)
+	var pc := PanelContainer.new()
+	pc.add_theme_stylebox_override("panel", _style(Color(0.06, 0.09, 0.11, 0.98), GOLD, 6, 2))
+	pc.custom_minimum_size = Vector2(560, 0)
+	cc.add_child(pc)
+	var mg := MarginContainer.new()
+	mg.add_theme_constant_override("margin_left", 24)
+	mg.add_theme_constant_override("margin_right", 24)
+	mg.add_theme_constant_override("margin_top", 16)
+	mg.add_theme_constant_override("margin_bottom", 18)
+	pc.add_child(mg)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	mg.add_child(v)
+	var t := _lbl("اللعبة متوقفة", 36, GOLD)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(t)
+	var resume := _pbtn("متابعة اللعب", func(): g.resume_game(), Vector2(500, 64), 26)
+	_seg_style(resume, true)
+	v.add_child(resume)
+	v.add_child(_pbtn("الإعدادات", func(): open_settings(), Vector2(500, 52), 20, false))
+	v.add_child(_pause_head("الحفظ"))
+	var r1 := HBoxContainer.new()
+	r1.add_theme_constant_override("separation", 10)
+	v.add_child(r1)
+	r1.add_child(_pbtn("حفظ في خانة جديدة", func(): g.save_game(true), Vector2(240, 52), 17))
+	pause_update_btn = _pbtn("تحديث الحفظ الحالي", func(): g.save_game(true, g.cur_slot), Vector2(240, 52), 17)
+	r1.add_child(pause_update_btn)
+	v.add_child(_pause_head("الخروج"))
+	var r2 := HBoxContainer.new()
+	r2.add_theme_constant_override("separation", 10)
+	v.add_child(r2)
+	r2.add_child(_pbtn("حفظ والخروج للقائمة", func(): g.save_and_menu(), Vector2(240, 52), 17))
+	var ex := _confirm_btn("خروج بدون حفظ", "اضغط للتأكيد: سيضيع التقدم", func(): g.to_menu(), Vector2(240, 52), 17)
+	ex.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	r2.add_child(ex)
+	return bg
+
+
+# ---------- الإعدادات: صوت وصورة وجودة وأداء ----------
+func _range_slider(lo: float, hi: float, st: float, init: float, cb: Callable) -> HSlider:
+	var sl := HSlider.new()
+	sl.min_value = lo
+	sl.max_value = hi
+	sl.step = st
+	sl.set_value_no_signal(init)
+	sl.custom_minimum_size = Vector2(420, 44)
+	sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl.add_theme_stylebox_override("slider", _style(Color(0.08, 0.12, 0.2), Color(0.5, 0.4, 0.2), 6, 1))
+	sl.add_theme_stylebox_override("grabber_area", _style(Color(0.88, 0.69, 0.31), Color(0.88, 0.69, 0.31), 6, 0))
+	sl.add_theme_stylebox_override("grabber_area_highlight", _style(Color(0.95, 0.8, 0.4), Color(0.95, 0.8, 0.4), 6, 0))
+	sl.add_theme_icon_override("grabber", _grabber())
+	sl.add_theme_icon_override("grabber_highlight", _grabber())
+	sl.value_changed.connect(cb)
+	sl.drag_ended.connect(func(_c): Sfx.play("tick"))
+	return sl
+
+
+func _build_settings() -> void:
+	GameSettings.load_cfg()
+	var o := _overlay("الإعدادات", 640.0)
+	settings_box = o[0]
+	var v: VBoxContainer = o[1]
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 340)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	var inner := VBoxContainer.new()
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inner.add_theme_constant_override("separation", 10)
+	sc.add_child(inner)
+
+	inner.add_child(_section("01", "الصوت"))
+	lbl_music = _lbl("", 20)
+	inner.add_child(lbl_music)
+	inner.add_child(_slider(Sfx.music_vol * 100.0, func(x: float): _set_music(x)))
+	lbl_sfx = _lbl("", 20)
+	inner.add_child(lbl_sfx)
+	inner.add_child(_slider(Sfx.sfx_vol * 100.0, func(x: float): _set_sfx(x)))
+	_update_vol_labels()
+
+	inner.add_child(_section("02", "الرسوميات"))
+	var qrow := HBoxContainer.new()
+	qrow.add_theme_constant_override("separation", 8)
+	inner.add_child(qrow)
+	gfx_quality_btns.clear()
+	for i in range(GameSettings.QUALITY_NAMES.size()):
+		var qb := _btn(str(GameSettings.QUALITY_NAMES[i]), func(): _set_quality(i), Vector2(110, 50), 18)
+		qb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		qrow.add_child(qb)
+		gfx_quality_btns.append(qb)
+	lbl_quality_hint = _lbl("", 15, Color(0.75, 0.86, 0.82))
+	lbl_quality_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_quality_hint.custom_minimum_size = Vector2(560, 0)
+	inner.add_child(lbl_quality_hint)
+	inner.add_child(_lbl("معدل الإطارات", 18, Color(0.88, 0.93, 0.9)))
+	var frow := HBoxContainer.new()
+	frow.add_theme_constant_override("separation", 8)
+	inner.add_child(frow)
+	gfx_fps_btns.clear()
+	for i in range(GameSettings.FPS_VALUES.size()):
+		var fb := _btn(str(GameSettings.FPS_NAMES[i]), func(): _set_fps(i), Vector2(110, 50), 19)
+		fb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		frow.add_child(fb)
+		gfx_fps_btns.append(fb)
+	fps_toggle_btn = _btn("", func(): _toggle_fps(), Vector2(360, 44), 17)
+	var tr_row := HBoxContainer.new()
+	tr_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	tr_row.add_child(fps_toggle_btn)
+	inner.add_child(tr_row)
+	_refresh_gfx_ui()
+
+	inner.add_child(_section("03", "متقدم"))
+	var lrow := HBoxContainer.new()
+	lrow.alignment = BoxContainer.ALIGNMENT_CENTER
+	lrow.add_child(_btn("سجل التشغيل (للدعم الفني)", func(): _open_log(), Vector2(320, 44), 17))
+	inner.add_child(lrow)
+	_build_log_overlay()
+
+	var back := _btn("رجوع", func(): close_settings(), Vector2(300, 54), 22)
+	var br := HBoxContainer.new()
+	br.alignment = BoxContainer.ALIGNMENT_CENTER
+	br.add_child(back)
+	v.add_child(br)
+
+
+func _update_vol_labels() -> void:
+	lbl_music.text = "الموسيقى: %d٪" % int(Sfx.music_vol * 100.0 + 0.5)
+	lbl_sfx.text = "المؤثرات: %d٪" % int(Sfx.sfx_vol * 100.0 + 0.5)
+
+
+func _refresh_gfx_ui() -> void:
+	for i in range(gfx_quality_btns.size()):
+		_seg_style(gfx_quality_btns[i], i == GameSettings.quality)
+	if lbl_quality_hint != null:
+		lbl_quality_hint.text = str(GameSettings.QUALITY_HINTS[GameSettings.quality])
+	var fi: int = GameSettings.fps_index()
+	for i in range(gfx_fps_btns.size()):
+		_seg_style(gfx_fps_btns[i], i == fi)
+	if fps_toggle_btn != null:
+		fps_toggle_btn.text = "عداد الإطارات أثناء اللعب: " + ("مفعّل" if GameSettings.show_fps else "معطّل")
+	if fps_lbl != null:
+		fps_lbl.visible = GameSettings.show_fps
+
+
+func _apply_gfx() -> void:
+	GameSettings.save_cfg()
+	GameSettings.apply(g)
+	_refresh_gfx_ui()
+
+
+func _set_quality(q: int) -> void:
+	GameSettings.quality = q
+	Sfx.play("pick_mode")
+	_apply_gfx()
+
+
+func _set_fps(i: int) -> void:
+	GameSettings.fps = int(GameSettings.FPS_VALUES[i])
+	Sfx.play("pick_mode")
+	_apply_gfx()
+
+
+func _toggle_fps() -> void:
+	GameSettings.show_fps = not GameSettings.show_fps
+	Sfx.play("pick_mode")
+	_apply_gfx()
+
+
+# ---------- سجل التشغيل ----------
+func _build_log_overlay() -> void:
+	var o := _overlay("سجل التشغيل", 780.0)
+	log_box = o[0]
+	var v: VBoxContainer = o[1]
+	var hint := _lbl("اضغط «نسخ السجل» ثم الصقه في رسالة للمطوّر. الأسطر المهمة (الأخطاء) تظهر أولاً.", 15, Color(0.75, 0.86, 0.82))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(720, 0)
+	v.add_child(hint)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 300)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	log_lbl = _lbl("", 12, Color(0.85, 0.92, 0.88))
+	log_lbl.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	log_lbl.custom_minimum_size = Vector2(720, 0)
+	sc.add_child(log_lbl)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(_btn("نسخ السجل", func(): _copy_log(), Vector2(220, 48), 18))
+	row.add_child(_btn("تحديث", func(): _refresh_log(), Vector2(150, 48), 18))
+	row.add_child(_btn("رجوع", func(): _close_log(), Vector2(150, 48), 18))
+	v.add_child(row)
+	log_box.visible = false
+
+
+func _open_log() -> void:
+	Sfx.play("click")
+	_refresh_log()
+	log_box.visible = true
+
+
+func _close_log() -> void:
+	Sfx.play("click")
+	log_box.visible = false
+
+
+func close_overlays() -> bool:
+	if log_box != null and log_box.visible:
+		log_box.visible = false
+		return true
+	return super.close_overlays()
+
+
+func _read_log() -> String:
+	var path := "user://logs/godot.log"
+	if not FileAccess.file_exists(path):
+		return "لا يوجد ملف سجل بعد. أعد تشغيل اللعبة ثم افتح هذه الصفحة."
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return "تعذّر فتح ملف السجل."
+	var txt: String = f.get_as_text()
+	f.close()
+	# الأسطر المهمة بلا تكرار متتالٍ (سبب الخلل الحقيقي يكون غالباً في أول السجل لا في آخره)
+	var important := PackedStringArray()
+	var last := ""
+	var rep := 0
+	for l in txt.split("\n"):
+		var line: String = l.strip_edges()
+		if line == "":
+			continue
+		var keep: bool = line.contains("ERROR") or line.contains("SCRIPT") or line.contains("Parse") or line.contains("Compile") or line.contains("Failed") or line.contains("WARNING") or line.contains("الهدية") or line.contains("فشل") or line.contains("بلا نموذج") or line.begins_with("at:")
+		if not keep:
+			continue
+		if line == last:
+			rep += 1
+			continue
+		if rep > 0:
+			important.append("   (تكرر %d مرة)" % rep)
+			rep = 0
+		important.append(line)
+		last = line
+	if rep > 0:
+		important.append("   (تكرر %d مرة)" % rep)
+	var out := PackedStringArray()
+	out.append("== أول الأخطاء (السبب غالباً هنا) ==")
+	for i in range(mini(40, important.size())):
+		out.append(important[i])
+	if important.size() > 40:
+		out.append("== آخر الأخطاء ==")
+		for i in range(maxi(40, important.size() - 20), important.size()):
+			out.append(important[i])
+	return "\n".join(out)
+
+
+func _refresh_log() -> void:
+	log_lbl.text = _read_log()
+
+
+func _copy_log() -> void:
+	DisplayServer.clipboard_set(log_lbl.text)
+	Sfx.play("ok")
+	toast("تم نسخ السجل")
+
+
+# ---------- معاينة الوحدات والمباني ----------
+func _model_box(n: Node, inv: Transform3D, out: Array) -> void:
+	if n is MeshInstance3D:
+		var mi: MeshInstance3D = n
+		if mi.mesh != null:
+			var bb: AABB = (inv * mi.global_transform) * mi.get_aabb()
+			if out.is_empty():
+				out.append(bb)
+			else:
+				out[0] = (out[0] as AABB).merge(bb)
+	for c in n.get_children():
+		_model_box(c, inv, out)
+
+
+func _freeze_preview(sv: SubViewport) -> void:
+	if is_instance_valid(sv):
+		sv.render_target_update_mode = SubViewport.UPDATE_DISABLED
+
+
+func make_preview(key: String, col: Color, sz: Vector2, building := false) -> Control:
+	var tr := TextureRect.new()
+	tr.custom_minimum_size = sz
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ck: String = key + ":" + col.to_html(false) + ("b" if building else "u")
+	if not prev_cache.has(ck):
+		var sv := SubViewport.new()
+		sv.own_world_3d = true
+		sv.transparent_bg = true
+		sv.size = Vector2i(220, 120)
+		sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		prev_root.add_child(sv)
+		var root := Node3D.new()
+		sv.add_child(root)
+		var model: Node3D = Models.building_model(key, col) if building else ModelsEx.unit_model(key, col)
+		model.rotation.y = 0.7
+		root.add_child(model)
+		var env := Environment.new()
+		env.background_mode = Environment.BG_CLEAR_COLOR
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = Color(0.75, 0.75, 0.82)
+		env.ambient_light_energy = 0.9
+		var we := WorldEnvironment.new()
+		we.environment = env
+		root.add_child(we)
+		var light := DirectionalLight3D.new()
+		light.rotation_degrees = Vector3(-35.0, 35.0, 0.0)
+		light.light_energy = 1.3
+		root.add_child(light)
+		var box_out: Array = []
+		_model_box(model, root.global_transform.affine_inverse(), box_out)
+		var center := Vector3(0, 0.9, 0)
+		var radius := 1.5
+		if not box_out.is_empty():
+			var bb: AABB = box_out[0]
+			center = bb.get_center()
+			radius = maxf(bb.size.length() * 0.5, 0.6)
+		var cam := Camera3D.new()
+		cam.fov = 40.0
+		cam.near = 0.05
+		cam.far = 400.0
+		root.add_child(cam)
+		var dist: float = radius / sin(deg_to_rad(20.0)) * 0.88
+		cam.position = center + Vector3(0.0, 0.38, 1.0).normalized() * dist
+		cam.look_at(center, Vector3.UP)
+		prev_cache[ck] = sv
+		get_tree().create_timer(0.6).timeout.connect(_freeze_preview.bind(sv))
+	tr.texture = (prev_cache[ck] as SubViewport).get_texture()
+	return tr
