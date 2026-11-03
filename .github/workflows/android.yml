@@ -1,0 +1,70 @@
+name: Build Android (Godot)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.3"
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    container:
+      image: barichello/godot-ci:4.3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Godot and Android
+        run: |
+          mkdir -v -p ~/.local/share/godot/export_templates/ ~/.config/godot build
+          mv /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' "${ANDROID_HOME:-/usr/lib/android-sdk}" "${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}" > ~/.config/godot/editor_settings-4.3.tres
+
+      - name: Import project
+        shell: bash
+        run: |
+          godot --headless --import > import1.log 2>&1 || true
+          godot --headless --import > import2.log 2>&1 || true
+          cat import2.log
+
+      - name: Report script errors
+        shell: bash
+        continue-on-error: true
+        run: |
+          if grep -E "Parse Error|SCRIPT ERROR|Compile Error|Failed to load script" import1.log import2.log > errors.txt; then
+            while IFS= read -r line; do
+              echo "::error::$line"
+            done < <(sort -u errors.txt | head -20)
+            echo "توجد أخطاء في السكربتات"
+          else
+            echo "لا أخطاء في السكربتات"
+          fi
+
+      - name: Export APK
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ github.workspace }}/debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
+        run: godot --headless --export-debug "Android" build/rafidain-hawks.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rafidain-hawks-android
+          path: build/rafidain-hawks.apk
+
+      - name: Publish release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/rafidain-hawks.apk
