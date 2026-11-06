@@ -186,29 +186,28 @@ static func _color(rng: RandomNumberGenerator, kind: String) -> Color:
 	return sp[rng.randi() % sp.size()]
 
 
+# حي من البيوت فقط: كثافته من ضوضاء ناعمة (أحياء متراصة وأخرى متفرقة وفراغات مفتوحة)
 static func _block(t, sat: PackedInt32Array, occ: PackedByteArray, rng: RandomNumberGenerator, nz: FastNoiseLite, out: Array, x0: int, y0: int, sz: int) -> void:
-	var n: int = t.n
 	var cx: float = float(x0) + float(sz) * 0.5
 	var cy: float = float(y0) + float(sz) * 0.5
-	var half: float = float(n) * 0.5
-	var dcen: float = Vector2(cx - half, cy - half).length() / half
-	var d: float = clampf(nz.get_noise_2d(cx, cy) * 0.5 + 0.5 + (0.7 - dcen) * 0.35, 0.0, 1.0)
-	if d > 0.74:
-		_try(t, sat, occ, rng, out, x0, y0, sz, "sky", 6, 6)
-		for _i in range(rng.randi_range(1, 3)):
-			_try(t, sat, occ, rng, out, x0, y0, sz, "tower", 5, 5)
-		for _i in range(rng.randi_range(0, 2)):
-			_try(t, sat, occ, rng, out, x0, y0, sz, "apt", 4, 4)
-	elif d > 0.5:
-		for _i in range(rng.randi_range(3, 5)):
-			_try(t, sat, occ, rng, out, x0, y0, sz, "apt", 4, 4)
-		for _i in range(rng.randi_range(0, 2)):
-			_try(t, sat, occ, rng, out, x0, y0, sz, "house", 3, 3)
+	var d: float = nz.get_noise_2d(cx, cy) * 0.5 + 0.5
+	var count: int = 0
+	if d > 0.62:
+		count = rng.randi_range(6, 9)
+	elif d > 0.4:
+		count = rng.randi_range(3, 6)
 	elif d > 0.28:
-		for _i in range(rng.randi_range(5, 8)):
-			_try(t, sat, occ, rng, out, x0, y0, sz, "house", 3, 3 if rng.randf() > 0.4 else 4)
-	elif rng.randf() < 0.6:
-		_park(t, sat, occ, x0, y0, sz)
+		count = rng.randi_range(1, 3)
+	for _i in range(count):
+		var r: float = rng.randf()
+		var w: int = 3
+		var h: int = 3
+		if r > 0.82:
+			w = 4
+			h = 4
+		elif r > 0.55:
+			h = 4
+		_try(t, sat, occ, rng, out, x0, y0, sz, "house", w, h)
 
 
 # حديقة: تُلوَّن خضراء ويكثر فيها الشجر (النخيل خصوصاً)
@@ -262,8 +261,8 @@ static func spawn(t) -> void:
 		_solid(t, x, y, w, h, 1)
 	var box := BoxMesh.new()
 	box.size = Vector3(1, 1, 1)
-	t._flush(bodies, box, mat, 420.0)
-	t._flush(roofs, box, mat, 420.0)
+	t._flush(bodies, box, mat, 320.0)
+	t._flush(roofs, box, mat, 320.0)
 	t._flush(masts, box, t._veg_mat(false), 300.0, false)
 
 
