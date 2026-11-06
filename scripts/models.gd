@@ -1246,6 +1246,14 @@ static func _gate(root: Node3D, team_col: Color) -> void:
 	lamp(root, Vector3(3.4, 0.4, 2.6))
 
 
+# تفعيل أو إيقاف إلقاء الظلال لكل مجسمات عقدة (توفير كبير في الرسم على الجودة المتوسطة والمنخفضة)
+static func set_shadows(n: Node, on: bool) -> void:
+	if n is GeometryInstance3D:
+		(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if on else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for c in n.get_children():
+		set_shadows(c, on)
+
+
 static func darken(n: Node, f: float) -> void:
 	if n is MeshInstance3D:
 		var mi: MeshInstance3D = n
