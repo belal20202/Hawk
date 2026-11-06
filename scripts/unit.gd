@@ -89,6 +89,7 @@ func setup(main: Main, t: String, tm: int, pos: Vector3) -> void:
 	mscale = 1.55 if cls == "inf" else (1.35 if is_air else 1.28)
 	model.scale = Vector3.ONE * mscale
 	add_child(model)
+	set_shadows(GameSettings.preset() == 2)
 	_add_marker(a["color"])
 	turret = model.get_node_or_null("Turret")
 	rotor = model.get_node_or_null("Rotor")
@@ -101,6 +102,11 @@ func setup(main: Main, t: String, tm: int, pos: Vector3) -> void:
 		if l != null:
 			legs.append(l)
 	scan_t = randf() * 0.3
+
+
+func set_shadows(on: bool) -> void:
+	if model != null:
+		Models.set_shadows(model, on)
 
 
 # نموذج الوحدة. نماذج الرشّاش والكوماندوز تُحمَّل ديناميكياً كي لا يمنع أي خطأ فيها تحميل سكربت الوحدة كله
@@ -312,6 +318,9 @@ func _process(delta: float) -> void:
 		_logic(delta)
 	var gy: float = g.terrain.height_at(position.x, position.z)
 	position.y = lerpf(position.y, gy + alt, clampf(delta * 5.0, 0.0, 1.0))
+	# وحدة بعيدة عن الكاميرا لا تُرى: نتوقف عن تحريك مفاصلها وتأثيراتها (توفير معالجة)
+	if position.distance_squared_to(g.cam_pos) > 14400.0:
+		return
 	if rotor != null:
 		rotor.rotation.y += delta * 32.0
 	if tail_rotor != null:
