@@ -1,14 +1,14 @@
 class_name Terrain
 extends Node3D
-## تضاريس 3D: مدينة عراقية ثابتة بلا سيارات ولا أشخاص (شوارع وأرصفة وبيوت وعمارات وأبراج وناطحات سحاب وحدائق ومعالم أثرية)
-## يحيط بها بحر واقعي مع بضع بحيرات تعبرها جسور. المدينة في scripts/city.gd (تُحمَّل ديناميكياً).
-## الأنواع: 0 ساحة خرسانية، 1 عشب (حدائق)، 2 صخر، 3 ماء، 4 جسر، 5 أشجار، 6 مبنى أو معلم أثري (عائق)
+## تضاريس 3D: صحراء مستوية بلا مرتفعات ولا أشجار، فيها قرى من البيوت ومعالم من الحضارة العراقية، ويحيط بها بحر واقعي
+## مع بضع بحيرات تعبرها جسور. القرى والمعالم في scripts/city.gd (تُحمَّل ديناميكياً).
+## الأنواع: 0 رمل، 1 تراب متماسك، 2 صخر، 3 ماء، 4 جسر، 5 غير مستخدم، 6 بيت أو معلم أثري (عائق)
 ## build_block: 1 = لا يمكن البناء (شجر أو حجر أو أثر)
 
 const SHADER_T := preload("res://shaders/terrain.gdshader")
 const SHADER_W := preload("res://shaders/water.gdshader")
 const FLAT_Y := 1.0   # ارتفاع الأرض الأساسي
-const RELIEF_MAX := 0.5   # أقصى ارتفاع للتلال الرملية فوق الأرض الأساسية (لا تنزل تحتها أبداً)
+const RELIEF_MAX := 0.0   # بلا مرتفعات: الأرض مستوية تماماً (ضع رقماً موجباً لتفعيل كثبان خفيفة)
 const WATER_Y := 0.0  # مستوى سطح الماء
 const CHUNK := 64.0
 
@@ -103,8 +103,6 @@ func _gen_types(seed_val: int) -> void:
 			var t := 0
 			if v < 0.22:
 				t = 1
-			if t == 1 and _hs(x, y) > 0.80:
-				t = 5
 			# البحر المحيط بالخريطة بشاطئ متعرج
 			var ed: int = mini(mini(x, y), mini(n - 1 - x, n - 1 - y))
 			var coast: float = (11.0 + (nc.get_noise_2d(x, y) * 0.5 + 0.5) * 7.0) * K
@@ -240,7 +238,9 @@ func _flat_mask() -> PackedFloat32Array:
 
 
 func _gen_heights(seed_val: int) -> void:
-	var fm: PackedFloat32Array = _flat_mask()
+	var fm := PackedFloat32Array()
+	if RELIEF_MAX > 0.0:
+		fm = _flat_mask()
 	var nz1 := FastNoiseLite.new()
 	nz1.seed = seed_val
 	nz1.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -284,7 +284,7 @@ func _gen_heights(seed_val: int) -> void:
 						br = true
 			if br:
 				hh = FLAT_Y
-			elif sum == 0:
+			elif RELIEF_MAX > 0.0 and sum == 0:
 				# تلال رملية هادئة، بعيداً عن الماء (نافذة 13×13 خالية من الماء) وبعيداً عن القواعد والطرق
 				var wx0: int = clampi(i - 6 + pad, 0, pw)
 				var wx1: int = clampi(i + 6 + pad, 0, pw)
@@ -334,18 +334,24 @@ func footprint(c: Vector2i, s: int) -> Vector2:
 func type_color(t: int) -> Color:
 	match t:
 		1:
-			return Color(0.29, 0.49, 0.23)
+			return Color(0.8, 0.66, 0.43)
 		2:
-			return Color(0.5, 0.47, 0.42)
+			return Color(0.6, 0.5, 0.38)
 		3:
-			return Color(0.42, 0.44, 0.46)
+			return Color(0.45, 0.42, 0.36)
 		4:
-			return Color(0.34, 0.33, 0.31)
+			return Color(0.42, 0.34, 0.26)
 		5:
-			return Color(0.26, 0.42, 0.2)
+			return Color(0.8, 0.66, 0.43)
 		6:
-			return Color(0.58, 0.57, 0.54)
-	return Color(0.6, 0.59, 0.56)
+			return Color(0.78, 0.66, 0.46)
+	return Color(0.88, 0.75, 0.52)
+
+
+# سطح الأرض قطع صغيرة (36 قطعة) بدقة نصف خلية: الكاميرا لا ترسم إلا القطع الظاهرة، والرؤوس أقل بأربعة أضعاف،
+# بلا مصادم مثلثات ثقيل (التقاط الأرض بالنقر يُحسب رياضياً في Main.ground_at) وبلا إلقاء ظلال.
+const MESH_STEP := 2
+const CHUNK_Q := 30
 
 
 func _build_mesh() -> void:
@@ -353,81 +359,87 @@ func _build_mesh() -> void:
 	var tcol: Array = []
 	for t in range(7):
 		tcol.append(type_color(t))
-	var verts := PackedVector3Array()
-	var norms := PackedVector3Array()
-	var cols := PackedColorArray()
-	verts.resize(w * w)
-	norms.resize(w * w)
-	cols.resize(w * w)
-	for j in w:
-		if j % 30 == 0:
-			_p(0.6 + 0.2 * float(j) / w, "جاري بناء سطح الأرض...")
-			await get_tree().process_frame
-		for i in w:
-			var k: int = j * w + i
-			var hh: float = heights[k]
-			verts[k] = Vector3(i * Data.CELL, hh, j * Data.CELL)
-			var hl: float = heights[j * w + maxi(i - 1, 0)]
-			var hr: float = heights[j * w + mini(i + 1, w - 1)]
-			var hu: float = heights[maxi(j - 1, 0) * w + i]
-			var hd: float = heights[mini(j + 1, w - 1) * w + i]
-			norms[k] = Vector3(hl - hr, 2.0 * Data.CELL, hu - hd).normalized()
-			var c := Color(0, 0, 0)
-			var cnt := 0.0
-			var rd := 0.0
-			for dj in range(-1, 1):
-				for di in range(-1, 1):
-					var cx: int = i + di
-					var cy: int = j + dj
-					if cx < 0 or cy < 0 or cx >= n or cy >= n:
-						continue
-					var ci := idx(cx, cy)
-					c += tcol[types[ci]]
-					rd = maxf(rd, road_w[ci])
-					cnt += 1.0
-			c = c / maxf(cnt, 1.0)
-			c = c.lerp(Color(0.18, 0.18, 0.2), rd * 0.9)
-			if hh < WATER_Y:
-				c = c.lerp(Color(0.2, 0.36, 0.36), clampf(-hh / 2.6, 0.0, 0.75))
-			else:
-				c = c * 1.0
-			var v: float = 0.92 + _hs(i, j) * 0.16
-			cols[k] = Color(c.r * v, c.g * v, c.b * v, 1.0)
-	var indices := PackedInt32Array()
-	indices.resize(n * n * 6)
-	var q := 0
-	for j in n:
-		for i in n:
-			var a: int = j * w + i
-			var b: int = a + 1
-			var c2: int = a + w
-			var d2: int = c2 + 1
-			indices[q] = a
-			indices[q + 1] = b
-			indices[q + 2] = c2
-			indices[q + 3] = b
-			indices[q + 4] = d2
-			indices[q + 5] = c2
-			q += 6
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_NORMAL] = norms
-	arrays[Mesh.ARRAY_COLOR] = cols
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var m := ArrayMesh.new()
-	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	terr_mat = ShaderMaterial.new()
 	terr_mat.shader = SHADER_T
-	var mi := MeshInstance3D.new()
-	mi.mesh = m
-	mi.material_override = terr_mat
-	add_child(mi)
-	var body := StaticBody3D.new()
-	var cs := CollisionShape3D.new()
-	cs.shape = m.create_trimesh_shape()
-	body.add_child(cs)
-	add_child(body)
+	var step: int = MESH_STEP
+	var vq: int = int(ceil(float(n) / float(step)))
+	var chunks: int = int(ceil(float(vq) / float(CHUNK_Q)))
+	for cj in chunks:
+		_p(0.6 + 0.2 * float(cj) / float(chunks), "جاري بناء سطح الأرض...")
+		await get_tree().process_frame
+		for cx0 in chunks:
+			var q0x: int = cx0 * CHUNK_Q
+			var q0y: int = cj * CHUNK_Q
+			var q1x: int = mini(q0x + CHUNK_Q, vq)
+			var q1y: int = mini(q0y + CHUNK_Q, vq)
+			var cw: int = q1x - q0x + 1
+			var ch: int = q1y - q0y + 1
+			var verts := PackedVector3Array()
+			var norms := PackedVector3Array()
+			var cols := PackedColorArray()
+			verts.resize(cw * ch)
+			norms.resize(cw * ch)
+			cols.resize(cw * ch)
+			for jj in ch:
+				for ii in cw:
+					var i: int = mini((q0x + ii) * step, n)
+					var j: int = mini((q0y + jj) * step, n)
+					var k: int = jj * cw + ii
+					var hh: float = heights[j * w + i]
+					verts[k] = Vector3(i * Data.CELL, hh, j * Data.CELL)
+					var hl: float = heights[j * w + maxi(i - step, 0)]
+					var hr: float = heights[j * w + mini(i + step, n)]
+					var hu: float = heights[maxi(j - step, 0) * w + i]
+					var hd: float = heights[mini(j + step, n) * w + i]
+					norms[k] = Vector3(hl - hr, 2.0 * Data.CELL * float(step), hu - hd).normalized()
+					var c := Color(0, 0, 0)
+					var cnt := 0.0
+					var rd := 0.0
+					for dj in range(-1, 1):
+						for di in range(-1, 1):
+							var cx: int = i + di
+							var cy: int = j + dj
+							if cx < 0 or cy < 0 or cx >= n or cy >= n:
+								continue
+							var ci := idx(cx, cy)
+							c += tcol[types[ci]]
+							rd = maxf(rd, road_w[ci])
+							cnt += 1.0
+					c = c / maxf(cnt, 1.0)
+					c = c.lerp(Color(0.66, 0.52, 0.34), rd * 0.75)
+					if hh < WATER_Y:
+						c = c.lerp(Color(0.2, 0.36, 0.36), clampf(-hh / 2.6, 0.0, 0.75))
+					var v: float = 0.92 + _hs(i, j) * 0.16
+					cols[k] = Color(c.r * v, c.g * v, c.b * v, 1.0)
+			var indices := PackedInt32Array()
+			indices.resize((cw - 1) * (ch - 1) * 6)
+			var q := 0
+			for jj in ch - 1:
+				for ii in cw - 1:
+					var a: int = jj * cw + ii
+					var b: int = a + 1
+					var c2: int = a + cw
+					var d2: int = c2 + 1
+					indices[q] = a
+					indices[q + 1] = b
+					indices[q + 2] = c2
+					indices[q + 3] = b
+					indices[q + 4] = d2
+					indices[q + 5] = c2
+					q += 6
+			var arrays := []
+			arrays.resize(Mesh.ARRAY_MAX)
+			arrays[Mesh.ARRAY_VERTEX] = verts
+			arrays[Mesh.ARRAY_NORMAL] = norms
+			arrays[Mesh.ARRAY_COLOR] = cols
+			arrays[Mesh.ARRAY_INDEX] = indices
+			var m := ArrayMesh.new()
+			m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			var mi := MeshInstance3D.new()
+			mi.mesh = m
+			mi.material_override = terr_mat
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
 
 
 # سطح الماء: يمتد خارج الخريطة ليحيط بها كبحر واقعي
@@ -688,9 +700,12 @@ func _build_details(seed_val: int) -> void:
 				# الرمل: أشجار منتشرة وتتكاثف في بساتين
 				if roll < 0.002 + grove * 0.004:
 					_plant_tree(rng, wx, wz, gy, palms, acacias, poplars)
-	_flush(palms, _palm_mesh(), _veg_mat(true), 170.0)
-	_flush(acacias, _acacia_mesh(), _veg_mat(true), 170.0)
-	_flush(poplars, _poplar_mesh(), _veg_mat(true), 170.0)
+	if not palms.is_empty():
+		_flush(palms, _palm_mesh(), _veg_mat(true), 170.0)
+	if not acacias.is_empty():
+		_flush(acacias, _acacia_mesh(), _veg_mat(true), 170.0)
+	if not poplars.is_empty():
+		_flush(poplars, _poplar_mesh(), _veg_mat(true), 170.0)
 	var plank := BoxMesh.new()
 	plank.size = Vector3(Data.CELL, 0.3, Data.CELL)
 	_flush(planks, plank, _veg_mat(false), 600.0)
@@ -709,6 +724,7 @@ func _build_details(seed_val: int) -> void:
 
 
 func _plant_tree(rng: RandomNumberGenerator, wx: float, wz: float, gy: float, palms: Dictionary, acacias: Dictionary, poplars: Dictionary) -> void:
+	return   # لا أشجار في الخريطة (صحراء مفتوحة وقرى من البيوت فقط)
 	var s: float = rng.randf_range(0.8, 1.35)
 	var rb := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s, s))
 	var shade: float = rng.randf_range(0.88, 1.1)
