@@ -127,35 +127,38 @@ func _build_environment() -> void:
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
 	sm.sky_top_color = Color(0.22, 0.42, 0.74)
-	sm.sky_horizon_color = Color(0.72, 0.8, 0.88)
-	sm.ground_horizon_color = Color(0.62, 0.68, 0.72)
-	sm.ground_bottom_color = Color(0.3, 0.34, 0.38)
+	sm.sky_horizon_color = Color(0.86, 0.82, 0.72)
+	sm.ground_horizon_color = Color(0.78, 0.7, 0.55)
+	sm.ground_bottom_color = Color(0.45, 0.38, 0.28)
 	sky.sky_material = sm
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 1.0
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	# ضباب خفيف جداً لا يغطي السماء (كان يبيّض السماء كلها): عمق بسيط للمشهد البعيد فقط
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.74, 0.8, 0.86)
-	env.fog_density = 0.0012
+	env.fog_light_color = Color(0.86, 0.8, 0.68)
+	env.fog_density = 0.00028
+	env.fog_sky_affect = 0.0
+	env.fog_aerial_perspective = 0.0
 	env.glow_enabled = false
-	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.25
-	env.adjustment_contrast = 1.06
+	env.adjustment_enabled = false
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-50.0, -35.0, 0.0)
 	sun.light_energy = 1.55
-	sun.light_color = Color(1.0, 0.97, 0.9)
+	sun.light_color = Color(1.0, 0.95, 0.84)
 	sun.shadow_enabled = true
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-	sun.directional_shadow_max_distance = 95.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	sun.directional_shadow_max_distance = 60.0
+	sun.directional_shadow_blend_splits = false
 	add_child(sun)
 
 
 # ---------- بدء وإنهاء ----------
+var cam_pos := Vector3.ZERO   # موضع الكاميرا (يُحدَّث كل إطار)
 var gates: Array = []   # بوابات اللاعب: تعبرها وحداته فقط، ويهدمها العدو
 
 
@@ -1132,22 +1135,18 @@ func _build_minimap_base() -> void:
 		var t: int = terrain.types[i]
 		var mx: int = i % n
 		var my: int = floori(float(i) / float(n))
-		# المدينة: خرسانة رمادية وشوارع أغمق ومبانٍ وحدائق خضراء وماء أزرق
-		var c := Color(0.56, 0.56, 0.53)
-		if mx % 26 < 4 or my % 26 < 4:
-			c = Color(0.27, 0.27, 0.3)
+		# صحراء: رمل ذهبي وتربة وبيوت وماء أزرق
+		var c := Color(0.84, 0.72, 0.5)
 		if t == 1:
-			c = Color(0.32, 0.52, 0.26)
+			c = Color(0.76, 0.62, 0.4)
 		elif t == 2:
-			c = Color(0.45, 0.42, 0.38)
+			c = Color(0.55, 0.46, 0.36)
 		elif t == 3:
 			c = Color(0.16, 0.42, 0.6)
 		elif t == 4:
 			c = Color(0.42, 0.32, 0.22)
-		elif t == 5:
-			c = Color(0.2, 0.38, 0.16)
 		elif t == 6:
-			c = Color(0.78, 0.72, 0.6)
+			c = Color(0.62, 0.5, 0.36)
 		bytes[i * 4] = int(c.r * 255.0)
 		bytes[i * 4 + 1] = int(c.g * 255.0)
 		bytes[i * 4 + 2] = int(c.b * 255.0)
@@ -1346,15 +1345,21 @@ func try_place(gp: Vector3) -> void:
 
 
 # ---------- الإدخال ----------
+# نقطة الأرض تحت إصبعك: تقاطع الشعاع مع الأرض يُحسب رياضياً (بلا مصادم مثلثات ثقيل يستهلك الذاكرة)
 func ground_at(sp: Vector2) -> Variant:
 	var cam: Camera3D = rig.cam
-	var from: Vector3 = cam.project_ray_origin(sp)
-	var to: Vector3 = from + cam.project_ray_normal(sp) * 900.0
-	var q := PhysicsRayQueryParameters3D.create(from, to)
-	var r: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
-	if r.is_empty():
+	var o: Vector3 = cam.project_ray_origin(sp)
+	var d: Vector3 = cam.project_ray_normal(sp)
+	if d.y > -0.001:
 		return null
-	return r["position"]
+	var y: float = Terrain.FLAT_Y
+	var p := Vector3.ZERO
+	for _i in range(4):
+		var tt: float = (y - o.y) / d.y
+		p = o + d * tt
+		y = terrain.height_at(p.x, p.z)
+	var t2: float = (y - o.y) / d.y
+	return o + d * t2
 
 
 func _px_radius(p3: Vector3, r: float) -> float:
@@ -1605,7 +1610,7 @@ func _process(delta: float) -> void:
 	alert_t -= delta
 	sep_t -= delta
 	if sep_t <= 0.0:
-		sep_t = 0.04
+		sep_t = 0.1
 		_separate()
 	var spd: float = 22.0 * delta
 	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
@@ -1622,6 +1627,7 @@ func _process(delta: float) -> void:
 		rig.rotate_by(delta * 1.4)
 	rig.focus.y = lerpf(rig.focus.y, terrain.height_at(rig.focus.x, rig.focus.z), 0.1)
 	rig.apply()
+	cam_pos = rig.cam.global_position
 	if mode == "place" and ghost != null:
 		var gp: Variant = ground_at(last_pos)
 		if gp != null:
@@ -1633,7 +1639,7 @@ func _process(delta: float) -> void:
 			(ghost.material_override as StandardMaterial3D).albedo_color = Color(0.3, 1, 0.45, 0.45) if ok else Color(1, 0.3, 0.25, 0.45)
 	fog_t -= delta
 	if fog_t <= 0.0:
-		fog_t = 0.3
+		fog_t = 0.5
 		update_fog()
 	hud_t -= delta
 	if hud_t <= 0.0:
@@ -1641,7 +1647,7 @@ func _process(delta: float) -> void:
 		hud.refresh()
 	mini_t -= delta
 	if mini_t <= 0.0:
-		mini_t = 0.6
+		mini_t = 1.0
 		_update_minimap()
 	win_t -= delta
 	if win_t <= 0.0 and not over:
