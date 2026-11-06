@@ -62,6 +62,7 @@ func setup(main: Main, t: String, tm: int, c: Vector2i, built: bool) -> void:
 	var col: Color = Data.ARMIES[g.army_of[tm]]["color"]
 	model = Models.building_model(t, col)
 	add_child(model)
+	set_shadows(GameSettings.preset() == 2)
 	turret = model.get_node_or_null("Turret")
 	is_turret = def.has("range")
 	door_l = model.get_node_or_null("DoorL")
@@ -409,6 +410,11 @@ func _doors(delta: float) -> void:
 	var k: float = clampf(delta * 3.0, 0.0, 1.0)
 	door_l.rotation.y = lerpf(door_l.rotation.y, 1.4 if cached_open else 0.0, k)
 	door_r.rotation.y = lerpf(door_r.rotation.y, -1.4 if cached_open else 0.0, k)
+
+
+func set_shadows(on: bool) -> void:
+	if model != null:
+		Models.set_shadows(model, on)
 
 
 func _ready_key(t: String) -> String:
