@@ -31,6 +31,8 @@ func _ready() -> void:
 			spiral.append(Vector2i(x, y))
 	spiral.sort_custom(func(a, b): return a.length_squared() < b.length_squared())
 	GameSettings.apply(self)
+	# لا حفظ تلقائي إطلاقاً: نحذف أي حفظ تلقائي قديم من نسخ سابقة
+	delete_slot(AUTO_SLOT)
 
 
 # إضاءة صحراوية: ضوء محيط أقوى وضباب أخف ليظهر سطح الأرض بوضوح
@@ -40,7 +42,7 @@ func _build_environment() -> void:
 		if c is WorldEnvironment:
 			var env: Environment = (c as WorldEnvironment).environment
 			if env != null:
-				env.ambient_light_energy = 1.2
+				env.ambient_light_energy = 1.3
 				env.fog_density = 0.0008
 				env.fog_light_color = Color(0.9, 0.82, 0.64)
 
@@ -97,7 +99,25 @@ func _spawn_initial() -> void:
 		add_building("bar", o, b + bar_off, true)
 		if hostile(o, 0):
 			add_building("fac", o, b + Vector2i(bar_off.x, -4 if low else 4), true)
+		if o != 0:
+			_spawn_start_defenses(o)
 		_spawn_gift(o)
+
+
+# دفاعات جاهزة حول مقر كل جيش حاسوب عند البداية (عددها حسب الصعوبة)
+func _spawn_start_defenses(o: int) -> void:
+	var want: int = int(Data.DIFF[diff].get("start_def", 1)) if hostile(o, 0) else 1
+	var kinds: Array = ["twr", "mor", "twr", "aat", "lsr"]
+	var b: Vector2i = Data.BASES[o]
+	var placed := 0
+	for i in range(80):
+		if placed >= want:
+			break
+		var ty: String = str(kinds[placed % kinds.size()])
+		var c := Vector2i(b.x + randi_range(-11, 11), b.y + randi_range(-11, 11))
+		if can_place(o, ty, c):
+			add_building(ty, o, c, true)
+			placed += 1
 
 
 func _spawn_gift(o: int) -> void:
@@ -266,7 +286,7 @@ func notify_attack(b) -> void:
 	alert_cell = world_to_cell(b.position)
 	alert_t = 6.0
 	hud.show_alert(msg, b.position)
-	hud.toast(msg, 3.0)
+	hud.alert_toast(msg, 3.0)
 	Sfx.play("alert")
 	if b.team == 0:
 		Input.vibrate_handheld(300)
@@ -304,6 +324,7 @@ func order_move(us: Array, wp: Vector3, am: bool) -> void:
 			goal = base
 		u.tgt = null
 		u.forced = false
+		u.resume_cell = Vector2i(-1, -1)
 		u.amove = am
 		u.dest = goal
 		u.goto_cell(goal)
@@ -356,16 +377,19 @@ func _nudge(u: Unit, mx: float, mz: float) -> float:
 	return 0.0
 
 
+# تباعد سلس بلا تداخل ولا اصطدام: كل وحدتين متقاربتين (من أي جيش) تُدفعان بلطف بعيداً عن بعضهما.
+# الواقفة تتنحى أكثر من المتحركة حتى لا تعيق الطريق، والطائرات تتباعد عن بعضها فقط.
+# الإزاحة تُخزَّن في sep_v وتُطبَّق تدريجياً كل إطار داخل Unit._process.
 func _push_pair(a: Unit, b: Unit) -> void:
-	if a.is_air or b.is_air:
+	if a.is_air != b.is_air:
 		return
-	if a.moving or b.moving:
+	if a.is_air and absf(a.alt - b.alt) > 2.5:
 		return
 	var ra: float = float(a.def["radius"])
 	var rb: float = float(b.def["radius"])
 	var dx: float = b.position.x - a.position.x
 	var dz: float = b.position.z - a.position.z
-	var md: float = (ra + rb) * 0.85
+	var md: float = (ra + rb) * 0.95 + 0.3
 	var d2: float = dx * dx + dz * dz
 	if d2 >= md * md:
 		return
@@ -379,6 +403,16 @@ func _push_pair(a: Unit, b: Unit) -> void:
 		var ang: float = randf() * TAU
 		ux = cos(ang)
 		uz = sin(ang)
-	var p: float = minf((md - d) * 0.12, 0.06)
-	_nudge(a, -ux * p, -uz * p)
-	_nudge(b, ux * p, uz * p)
+	var over: float = md - d
+	var ka := 0.5
+	var kb := 0.5
+	if a.moving and not b.moving:
+		ka = 0.2
+		kb = 0.8
+	elif b.moving and not a.moving:
+		ka = 0.8
+		kb = 0.2
+	var va: Vector2 = a.sep_v + Vector2(-ux, -uz) * over * ka
+	var vb: Vector2 = b.sep_v + Vector2(ux, uz) * over * kb
+	a.sep_v = va.limit_length(1.6)
+	b.sep_v = vb.limit_length(1.6)
