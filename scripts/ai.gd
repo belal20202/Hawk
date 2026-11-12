@@ -32,7 +32,11 @@ func reset() -> void:
 func tick(delta: float) -> void:
 	var cf: Dictionary = Data.DIFF[g.diff]
 	t += delta
-	if t >= float(cf["every"]):
+	# كلما طالت المباراة تسارع تدريب العدو (حتى ضعفين) ويصله دخل احتياطي يمنع انهياره
+	var tempo: float = 1.0 + minf(g.time / 900.0, 1.0)
+	if g.hostile(slot, 0):
+		g.gold[slot] += delta * float(cf.get("trickle", 1.0)) * tempo
+	if t >= float(cf["every"]) / tempo:
 		t = 0.0
 		_train(cf)
 	bt += delta
@@ -75,7 +79,7 @@ func _pick_inf(tech: int) -> String:
 
 
 func _train(cf: Dictionary) -> void:
-	var tech: int = int(cf["tech"])
+	var tech: int = mini(2, int(cf["tech"]) + int(g.time / 600.0))
 	var deps: Array = _mine_list("dep")
 	var trucks: int = g.units.filter(func(u): return u.team == slot and u.is_truck and not u.dead).size()
 	var queued := 0
@@ -90,16 +94,19 @@ func _train(cf: Dictionary) -> void:
 	var airs: Array = _mine_list("air")
 	var bld = null
 	var tp := ""
-	if bool(cf["air"]) and not airs.is_empty() and gold >= 800.0 and randf() < 0.4:
+	var use_air: bool = bool(cf["air"]) or (g.diff != "easy" and g.time > 900.0)
+	if use_air and not airs.is_empty() and gold >= 800.0 and randf() < 0.4:
 		bld = airs.pick_random()
 		tp = ["heli", "jet", "jet", "bomber"].pick_random()
+		if tech >= 2 and randf() < 0.3:
+			tp = "falcon"
 	elif not facs.is_empty() and gold >= 450.0 and randf() < 0.55:
 		bld = facs.pick_random()
 		tp = _pick_vehicle(tech)
 	elif not bars.is_empty() and gold >= 100.0:
 		bld = bars.pick_random()
 		tp = _pick_inf(tech)
-	if bld != null and tp != "" and bld.q.size() < 3:
+	if bld != null and tp != "" and bld.q.size() < 4:
 		g.queue_unit(bld, tp)
 
 
@@ -114,10 +121,12 @@ func _build(cf: Dictionary) -> void:
 			max_f = 2
 		"hard":
 			max_f = 4
+	if g.time > 900.0 and g.diff != "easy":
+		max_f += 1
 	var gold: float = g.gold[slot]
 	if depots < int(cf["depots"]) and gold >= 600.0:
 		_place_depot()
-	elif bool(cf["air"]) and count.call("air") < 1 and count.call("fac") >= 1 and gold >= 1000.0:
+	elif (bool(cf["air"]) or (g.diff != "easy" and g.time > 900.0)) and count.call("air") < 1 and count.call("fac") >= 1 and gold >= 1000.0:
 		_auto_place("air")
 	elif count.call("fac") < max_f and gold >= 800.0:
 		_auto_place("fac")
@@ -126,10 +135,6 @@ func _build(cf: Dictionary) -> void:
 	elif _def_count(mine_b) < int(cf["def_max"]) and gold >= 450.0 and randf() < 0.7:
 		var kinds: Array = cf["def_kinds"]
 		_auto_place(str(kinds.pick_random()))
-	elif g.diff == "hard" and count.call("ref") < 1 and count.call("dep") >= 2 and gold >= 1300.0:
-		_auto_place("ref")
-	elif g.diff != "easy" and count.call("rep") < 1 and count.call("fac") >= 1 and gold >= 900.0:
-		_auto_place("rep")
 
 
 # الهجوم بلا موعد ثابت: العدو يهاجم حين يجهز جيشه، وبميل عشوائي، ومن اتجاه مختلف في كل مرة.
@@ -143,7 +148,7 @@ func _recycle() -> void:
 
 # أهداف العدو مرتبة من الأقرب لمقري
 func _targets() -> Array:
-	var targets: Array = g.blds.filter(func(b): return g.hostile(b.team, slot) and not b.dead and b.type != "wall")
+	var targets: Array = g.blds.filter(func(b): return g.hostile(b.team, slot) and not b.dead and true)
 	var me: Variant = g.find_hq(slot)
 	if me != null:
 		targets.sort_custom(func(a, b): return Vector2(a.cell).distance_to(Vector2(me.cell)) < Vector2(b.cell).distance_to(Vector2(me.cell)))
@@ -188,7 +193,7 @@ func _warn(msg: String, tb, loud: bool) -> void:
 	# تحذير على الشاشة للاعب (وللحلفاء): بلا ذكر وقت ولا اتجاه
 	if tb == null or not g.friendly(tb.team):
 		return
-	g.hud.toast(msg, 3.2)
+	g.hud.alert_toast(msg, 3.2)
 	if loud:
 		Sfx.play("alert")
 
@@ -205,32 +210,50 @@ func _attack(cf: Dictionary) -> void:
 	if targets.is_empty():
 		return
 	var aggr: float = float(cf["aggr"])
-	# 1) الهجوم الشامل: جيش كبير جاهز، يتوزع على 2-3 جهات ويضرب أهدافاً مختلفة في آن واحد
-	if free.size() >= int(cf["wave"]) and g.time >= next_full and raids_done >= 2 and randf() < aggr * 0.5:
-		next_full = g.time + float(cf["full_gap"]) * randf_range(1.0, 1.7)
+	# مراحل المباراة (أسلوب جنرالز): مفارز صغيرة أولاً، ثم هجمات متعددة الجهات، ثم هجمات شاملة قوية تتصاعد
+	var scale: float = 1.0 + minf(g.time / 900.0, 2.0)
+	var late: bool = g.time > 720.0
+	if g.time < float(cf.get("first", 180.0)):
+		return
+	# 1) الهجوم الشامل بكامل القوة: يتوزع على 2-4 جهات ويضرب أهدافاً مختلفة في آن واحد
+	var need: int = int(float(cf["wave"]) * (0.8 + 0.2 * scale))
+	if free.size() >= need and g.time >= next_full and raids_done >= 3 and randf() < aggr * 0.6:
+		var fg: float = float(cf["full_gap"]) * (0.75 if late else 1.0)
+		next_full = g.time + fg * randf_range(1.0, 1.5)
 		next_raid = g.time + float(cf["gap"]) * randf_range(0.6, 1.0)
 		free.shuffle()
-		var ng: int = 2 if free.size() < 22 else 3
+		# نبقي حرساً صغيراً في الصعوبات الأسهل؛ في الصعب يهاجم الجميع
+		var keep: int = 0
+		if g.diff == "easy":
+			keep = int(free.size() * 0.25)
+		elif g.diff == "normal":
+			keep = int(free.size() * 0.12)
+		var atk: Array = free.slice(keep)
+		var ng: int = 2 if atk.size() < 20 else (3 if atk.size() < 36 else 4)
 		var base_ang: float = _new_angle()
 		_warn("تحذير! هجوم شامل يتجه نحو مدينتك", targets[0], true)
 		for i in range(ng):
 			var part: Array = []
-			for k in range(free.size()):
+			for k in range(atk.size()):
 				if k % ng == i:
-					part.append(free[k])
+					part.append(atk[k])
 			var tb: Variant = targets[mini(i, targets.size() - 1)]
 			_send(part, tb, base_ang + float(i) * TAU / float(ng) + randf_range(-0.3, 0.3))
 		raids_done += 1
 		return
-	# 2) مفرزة: مجموعة صغيرة تلتف من جهة عشوائية، ويبقى باقي الجيش للدفاع
-	var n: int = int(cf["raid"])
-	if g.time >= next_raid and free.size() >= n + 2 and randf() < aggr:
-		next_raid = g.time + float(cf["gap"]) * randf_range(0.8, 1.6)
+	# 2) مفارز: مجموعات صغيرة تلتف من جهات عشوائية (مفرزتان معاً بعد المرحلة الأولى)
+	var n: int = mini(int(float(cf["raid"]) * scale), 30)
+	var prongs: int = 1
+	if g.diff != "easy" and (g.time > 480.0 or raids_done >= 3):
+		prongs = 2
+	if g.time >= next_raid and free.size() >= n * prongs + 2 and randf() < aggr:
+		next_raid = g.time + float(cf["gap"]) * randf_range(0.8, 1.4)
 		var pool: Array = free.duplicate()
 		pool.shuffle()
-		var tb2: Variant = targets[mini(randi() % 3, targets.size() - 1)]
-		_warn("تنبيه: مفرزة معادية تقترب من مدينتك", tb2, false)
-		_send(pool.slice(0, n), tb2, _new_angle())
+		_warn("تنبيه: مفارز معادية تقترب من مدينتك" if prongs > 1 else "تنبيه: مفرزة معادية تقترب من مدينتك", targets[0], false)
+		for pi in range(prongs):
+			var tb2: Variant = targets[mini(randi() % 3, targets.size() - 1)]
+			_send(pool.slice(pi * n, (pi + 1) * n), tb2, _new_angle())
 		raids_done += 1
 
 
