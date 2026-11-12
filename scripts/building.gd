@@ -43,7 +43,7 @@ var cached_open := false
 
 
 # أصوات اكتمال المباني الجديدة تستعير أقرب صوت موجود
-const BUILT_ALIAS := {"cnn": "built_twr", "mor": "built_twr", "aat": "built_air", "rkt": "built_twr", "lsr": "built_air", "ref": "built_dep", "rep": "built_fac", "hos": "built_bar", "rad": "built_air", "gate": "built_twr"}
+const BUILT_ALIAS := {"mor": "built_twr", "aat": "built_air", "lsr": "built_air"}
 
 
 func setup(main: Main, t: String, tm: int, c: Vector2i, built: bool) -> void:
@@ -54,6 +54,8 @@ func setup(main: Main, t: String, tm: int, c: Vector2i, built: bool) -> void:
 	def = Data.BUILDINGS[t]
 	size = int(def["size"])
 	max_hp = float(def["hp"])
+	if tm != 0 and main.hostile(tm, 0):
+		max_hp *= float(Data.DIFF[main.diff].get("bhp", 1.0))
 	hp = max_hp
 	con = 1.0 if built else 0.0
 	var cx: float = (c.x + size / 2.0) * Data.CELL
@@ -286,8 +288,6 @@ func _process(delta: float) -> void:
 		_turret(delta)
 	elif def.has("heal"):
 		_support(delta)
-	if type == "rad" and turret != null:
-		turret.rotation.y += delta * 1.2
 	if door_l != null and door_r != null:
 		_doors(delta)
 
@@ -324,8 +324,6 @@ func _turret(delta: float) -> void:
 		e = null
 		cached_tgt = null
 	if e == null:
-		if turret != null:
-			turret.rotation.y += delta * 0.35
 		return
 	var tp: Vector3 = e.center()
 	ta = atan2(tp.x - position.x, tp.z - position.z)
@@ -346,7 +344,10 @@ func _turret(delta: float) -> void:
 	var ml: float = float(def.get("ml", 1.8))
 	var heavy: bool = bool(def.get("heavy", false))
 	var muzzle: Vector3 = position + Vector3(0, mh, 0) + Vector3(sin(ta), 0, cos(ta)) * ml
-	g.spawn_tracer(muzzle, tp + Vector3(0, 1.0, 0), heavy)
+	if bool(def.get("laser", false)):
+		g.spawn_tracer(muzzle, tp + Vector3(0, 1.0, 0), true, Color(0.3, 0.95, 1.0))
+	else:
+		g.spawn_tracer(muzzle, tp + Vector3(0, 1.0, 0), heavy)
 	if g.friendly(team) or visible:
 		g.muzzle_flash(muzzle, heavy)
 	e.take_damage(tdm, team)
@@ -431,7 +432,7 @@ func _ready_key(t: String) -> String:
 			return "ready_tank"
 		"heli":
 			return "ready_heli"
-		"jet", "bomber":
+		"jet", "bomber", "falcon":
 			return "ready_jet"
 	return "spawn_tank"
 
