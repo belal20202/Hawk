@@ -3,15 +3,16 @@ extends PanelContainer
 ## اللوحة العلوية الاحترافية: الذهب (برقم متحرك) والشاحنات وعدد الجيش ونمط اللعب.
 ## الأيقونات مرسومة بالكود (عملة، شاحنة، درع) بلا ملفات صور.
 
-const GOLD := Color(0.96, 0.78, 0.26)
+const GOLD := Color(1.0, 0.84, 0.3)
 const GOLD_L := Color(1.0, 0.92, 0.62)
-const INK := Color(0.035, 0.055, 0.08, 0.93)
-const SOFT := Color(0.66, 0.74, 0.76)
+const INK := Color(0.03, 0.07, 0.15, 0.94)
+const SOFT := Color(0.74, 0.84, 0.96)
 
 var lbl_gold: Label
 var lbl_trucks: Label
 var lbl_army: Label
 var lbl_mode: Label
+var lbl_time: Label
 var shown_gold := -1.0
 var target_gold := 0
 var last_gold := -1
@@ -49,6 +50,16 @@ class Icon extends Control:
 				for wx in [-10.0, 0.0, 11.0]:
 					draw_circle(Vector2(c.x + wx, c.y + 8), 4.2, Color(0.08, 0.08, 0.08))
 					draw_circle(Vector2(c.x + wx, c.y + 8), 1.7, Color(0.7, 0.7, 0.7))
+			"clock":
+				draw_circle(c, 17.0, Color(0.55, 0.72, 1.0))
+				draw_circle(c, 15.0, Color(0.05, 0.12, 0.26))
+				for tk in range(12):
+					var ta: float = float(tk) * TAU / 12.0
+					var td := Vector2(sin(ta), -cos(ta))
+					draw_line(c + td * 11.5, c + td * 14.0, Color(0.8, 0.9, 1.0), 1.5)
+				draw_line(c, c + Vector2(0, -9.5), Color(1.0, 0.84, 0.3), 2.5)
+				draw_line(c, c + Vector2(7.0, 3.0), Color(1.0, 1.0, 1.0), 2.5)
+				draw_circle(c, 2.4, Color(1.0, 0.84, 0.3))
 			"shield":
 				var pts := PackedVector2Array([c + Vector2(0, -17), c + Vector2(15, -11), c + Vector2(13, 6), c + Vector2(0, 17), c + Vector2(-13, 6), c + Vector2(-15, -11)])
 				draw_colored_polygon(pts, Color(0.6, 0.45, 0.1))
@@ -95,6 +106,11 @@ func setup() -> TopBar:
 	lbl_army = g3[1]
 	hb.add_child(g3[0])
 	hb.add_child(_divider())
+	var g4 := _stat("clock", "وقت اللعب", 24, Color(0.85, 0.94, 1.0))
+	lbl_time = g4[1]
+	lbl_time.text = "00:00"
+	hb.add_child(g4[0])
+	hb.add_child(_divider())
 	lbl_mode = Label.new()
 	lbl_mode.add_theme_font_size_override("font_size", 17)
 	lbl_mode.add_theme_color_override("font_color", SOFT)
@@ -129,7 +145,7 @@ func _stat(kind: String, caption: String, fs: int, col: Color) -> Array:
 	val.text = "0"
 	val.add_theme_font_size_override("font_size", fs)
 	val.add_theme_color_override("font_color", col)
-	val.add_theme_color_override("font_outline_color", Color(0.15, 0.08, 0.0, 0.95))
+	val.add_theme_color_override("font_outline_color", Color(0.0, 0.04, 0.14, 0.95))
 	val.add_theme_constant_override("outline_size", 5)
 	val.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(val)
@@ -167,6 +183,11 @@ func set_stats(gold: int, trucks: int, army: int, mode_name: String) -> void:
 	lbl_trucks.text = str(trucks)
 	lbl_army.text = str(army)
 	lbl_mode.text = mode_name
+
+
+func set_time(txt: String) -> void:
+	if lbl_time != null:
+		lbl_time.text = txt
 
 
 func _process(delta: float) -> void:
