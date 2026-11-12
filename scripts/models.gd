@@ -259,10 +259,13 @@ static func _vmat(kind: int) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
-	m.roughness = 0.85
+	m.roughness = 0.72
+	m.rim_enabled = true
+	m.rim = 0.18
+	m.rim_tint = 0.4
 	if kind == 1:
-		m.roughness = 0.42
-		m.metallic = 0.25
+		m.roughness = 0.34
+		m.metallic = 0.4
 	elif kind == 2:
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_vm[kind] = m
@@ -393,6 +396,8 @@ static func _build_unit(type: String, team_col: Color) -> Node3D:
 			_heli(root, team_col)
 		"jet":
 			_jet(root, team_col)
+		"falcon":
+			_falcon(root, team_col)
 		_:
 			box(root, Vector3(1, 1, 1), Vector3(0, 0.5, 0), team_col)
 	_bake(root)
@@ -590,19 +595,24 @@ static func _tank(root: Node3D, team_col: Color, kind: String) -> void:
 
 
 static func _bomber(root: Node3D, team_col: Color) -> void:
-	var jb := Color(0.62, 0.58, 0.48)
-	sph(root, 0.8, Vector3(0, 0.8, 0), jb, Vector3(0.9, 0.85, 4.6), 0.5)
-	sph(root, 0.55, Vector3(0, 0.95, 2.9), GLASS, Vector3(0.8, 0.7, 1.2), 0.05, 0.3)
-	box(root, Vector3(10.0, 0.16, 2.6), Vector3(0, 0.7, 0.2), jb, 0.5)
+	# قاذفة شبحية بجناح طائر (تصميم حديث): هيكل عريض مسطح بلا ذيل، فتحات هواء فوق الجسم، وعادم مخفي
+	var bb := Color(0.22, 0.24, 0.29)
+	var bl := Color(0.31, 0.33, 0.39)
+	sph(root, 1.0, Vector3(0, 0.62, 0.3), bb, Vector3(1.5, 0.5, 3.2), 0.4, 0.35)
+	box(root, Vector3(3.0, 0.3, 4.0), Vector3(0, 0.52, -0.2), bb, 0.4, 0.35)
+	box(root, Vector3(1.2, 0.1, 0.4), Vector3(0, 0.98, 2.0), GLASS.darkened(0.45), 0.05, 0.5)
 	for sx in [-1, 1]:
-		box(root, Vector3(1.4, 0.18, 2.65), Vector3(4.6 * sx, 0.7, 0.2), team_col, 0.5)
-		cyl(root, 0.5, 0.5, 0.03, Vector3(2.4 * sx, 0.8, 0.2), team_col, 0.6)
-	for ex in [-3.4, -1.7, 1.7, 3.4]:
-		cyl(root, 0.32, 0.34, 1.7, Vector3(ex, 0.55, 0.9), jb.darkened(0.1), 0.6, 0.0, Vector3(PI / 2.0, 0, 0))
-		cyl(root, 0.85, 0.85, 0.03, Vector3(ex, 0.55, 1.8), Color(0.15, 0.15, 0.16), 0.7)
-	box(root, Vector3(0.12, 1.8, 1.3), Vector3(0, 1.7, -3.7), team_col, 0.5)
-	box(root, Vector3(4.0, 0.12, 1.0), Vector3(0, 0.95, -3.5), jb, 0.5)
-	box(root, Vector3(1.2, 0.3, 3.0), Vector3(0, 0.2, 0), DARK, 0.7)
+		var wr := Vector3(0, 0.38 * sx, 0)
+		box(root, Vector3(5.6, 0.16, 2.8), Vector3(4.0 * sx, 0.5, -0.9), bb, 0.4, 0.35, wr)
+		box(root, Vector3(4.4, 0.05, 1.2), Vector3(3.8 * sx, 0.6, -0.5), bl, 0.4, 0.3, wr)
+		box(root, Vector3(1.4, 0.18, 2.7), Vector3(6.0 * sx, 0.5, -1.7), team_col, 0.5, 0.1, wr)
+		box(root, Vector3(1.8, 0.12, 1.2), Vector3(0.9 * sx, 0.5, -2.4), bb, 0.4, 0.35, Vector3(0, -0.5 * sx, 0))
+		box(root, Vector3(0.8, 0.16, 0.5), Vector3(1.1 * sx, 0.84, 0.9), Color(0.04, 0.04, 0.05), 0.7)
+		box(root, Vector3(0.8, 0.16, 0.5), Vector3(2.2 * sx, 0.78, 0.4), Color(0.04, 0.04, 0.05), 0.7)
+		box(root, Vector3(0.9, 0.1, 0.5), Vector3(1.2 * sx, 0.58, -2.3), Color(0.04, 0.04, 0.05), 0.7)
+	box(root, Vector3(0.9, 0.06, 1.2), Vector3(0, 0.84, -0.6), team_col, 0.5)
+	box(root, Vector3(0.05, 0.03, 2.6), Vector3(0.45, 0.8, -0.2), bl, 0.5)
+	box(root, Vector3(0.05, 0.03, 2.6), Vector3(-0.45, 0.8, -0.2), bl, 0.5)
 
 
 static func _truck(root: Node3D, team_col: Color) -> void:
@@ -661,21 +671,52 @@ static func _heli(root: Node3D, team_col: Color) -> void:
 
 
 static func _jet(root: Node3D, team_col: Color) -> void:
-	var jb := Color(0.74, 0.70, 0.60)
-	sph(root, 0.55, Vector3(0, 0.6, 0), jb, Vector3(0.85, 0.7, 4.2), 0.5)
-	cyl(root, 0.02, 0.38, 1.7, Vector3(0, 0.6, 2.9), jb, 0.5, 0.0, Vector3(PI / 2.0, 0, 0))
-	sph(root, 0.35, Vector3(0, 0.92, 1.0), GLASS, Vector3(0.8, 0.7, 1.7), 0.05, 0.3)
+	# مقاتلة شبحية حديثة: هيكل زاوي رمادي، أجنحة مسحوبة، ذيلان مائلان، مداخل هواء، وعادم متوهج
+	var jb := Color(0.4, 0.43, 0.49)
+	var jd := Color(0.27, 0.29, 0.34)
+	sph(root, 0.6, Vector3(0, 0.6, 0.1), jb, Vector3(0.95, 0.62, 4.3), 0.4, 0.35)
+	box(root, Vector3(1.5, 0.12, 3.6), Vector3(0, 0.55, 0.0), jd, 0.4, 0.35)
+	cyl(root, 0.02, 0.42, 1.9, Vector3(0, 0.6, 3.0), jb, 0.4, 0.35, Vector3(PI / 2.0, 0, 0))
+	sph(root, 0.36, Vector3(0, 0.92, 1.2), GLASS.darkened(0.25), Vector3(0.8, 0.7, 1.9), 0.05, 0.5)
 	for sx in [-1, 1]:
-		box(root, Vector3(2.7, 0.08, 1.9), Vector3(1.7 * sx, 0.55, -0.5), jb, 0.5, 0.0, Vector3(0, deg_to_rad(-22.0) * sx, 0))
-		box(root, Vector3(0.45, 0.09, 0.9), Vector3(3.0 * sx, 0.55, -1.2), team_col, 0.5, 0.0, Vector3(0, deg_to_rad(-22.0) * sx, 0))
-		cyl(root, 0.4, 0.4, 0.03, Vector3(1.8 * sx, 0.62, -0.5), team_col, 0.6)
-		box(root, Vector3(0.08, 1.0, 1.0), Vector3(0.5 * sx, 1.1, -2.0), jb.darkened(0.06), 0.5, 0.0, Vector3(0, 0, deg_to_rad(14.0) * sx))
-		box(root, Vector3(0.09, 0.5, 0.5), Vector3(0.6 * sx, 1.5, -2.2), team_col, 0.5, 0.0, Vector3(0, 0, deg_to_rad(14.0) * sx))
-		box(root, Vector3(0.36, 0.36, 1.3), Vector3(0.55 * sx, 0.42, 0.6), DARK, 0.6)
-		cyl(root, 0.26, 0.3, 0.5, Vector3(0.28 * sx, 0.6, -2.6), DARK, 0.5, 0.2, Vector3(PI / 2.0, 0, 0))
-		var gl := cyl(root, 0.18, 0.2, 0.1, Vector3(0.28 * sx, 0.6, -2.88), Color(1, 0.55, 0.2), 0.4, 0.0, Vector3(PI / 2.0, 0, 0))
+		var wr := Vector3(0, 0.5 * sx, 0)
+		box(root, Vector3(2.9, 0.09, 2.1), Vector3(1.9 * sx, 0.52, -0.4), jb, 0.4, 0.35, wr)
+		box(root, Vector3(0.6, 0.1, 0.9), Vector3(3.5 * sx, 0.52, -1.3), team_col, 0.5, 0.1, wr)
+		box(root, Vector3(1.7, 0.07, 1.0), Vector3(1.1 * sx, 0.5, -2.6), jd, 0.4, 0.35, Vector3(0, 0.4 * sx, 0))
+		var tr := Vector3(0, 0, -0.45 * sx)
+		box(root, Vector3(0.08, 1.1, 1.2), Vector3(0.55 * sx, 1.1, -2.1), jd, 0.4, 0.35, tr)
+		box(root, Vector3(0.09, 0.45, 0.5), Vector3(0.7 * sx, 1.5, -2.3), team_col, 0.5, 0.1, tr)
+		box(root, Vector3(0.45, 0.4, 1.3), Vector3(0.62 * sx, 0.4, 0.9), Color(0.05, 0.05, 0.06), 0.7)
+		cyl(root, 0.08, 0.08, 1.1, Vector3(1.6 * sx, 0.36, -0.2), IRON, 0.5, 0.3, Vector3(PI / 2.0, 0, 0))
+		cyl(root, 0.0, 0.08, 0.3, Vector3(1.6 * sx, 0.36, 0.45), team_col, 0.5, 0.0, Vector3(PI / 2.0, 0, 0))
+		cyl(root, 0.26, 0.3, 0.5, Vector3(0.3 * sx, 0.58, -2.7), DARK, 0.5, 0.3, Vector3(PI / 2.0, 0, 0))
+		var gl := cyl(root, 0.18, 0.2, 0.1, Vector3(0.3 * sx, 0.58, -3.0), Color(1, 0.55, 0.2), 0.4, 0.0, Vector3(PI / 2.0, 0, 0))
 		gl.material_override = glow_mat(Color(1.0, 0.5, 0.15))
-	box(root, Vector3(3.0, 0.07, 0.9), Vector3(0, 0.55, -2.4), jb.darkened(0.04), 0.5)
+
+
+static func _falcon(root: Node3D, team_col: Color) -> void:
+	# صقر الرافدين: مقاتلة النخبة. أجنحة مائلة للأمام، أجنحة أمامية صغيرة، ذيلان، وأنف وشرائط ذهبية مع عادم أزرق
+	var fb := Color(0.17, 0.19, 0.25)
+	sph(root, 0.55, Vector3(0, 0.6, 0.0), fb, Vector3(0.9, 0.7, 4.6), 0.3, 0.55)
+	cyl(root, 0.02, 0.36, 1.8, Vector3(0, 0.6, 3.0), GOLD, 0.25, 0.7, Vector3(PI / 2.0, 0, 0))
+	sph(root, 0.34, Vector3(0, 0.9, 0.9), GLASS, Vector3(0.8, 0.7, 1.8), 0.05, 0.4)
+	box(root, Vector3(0.12, 0.06, 3.4), Vector3(0, 0.9, -0.5), GOLD, 0.3, 0.6)
+	box(root, Vector3(0.7, 0.05, 0.7), Vector3(0, 0.76, -1.3), team_col, 0.5)
+	for sx in [-1, 1]:
+		var wr := Vector3(0, -0.55 * sx, 0)
+		box(root, Vector3(3.2, 0.09, 1.7), Vector3(1.9 * sx, 0.5, -0.7), fb, 0.3, 0.55, wr)
+		box(root, Vector3(3.0, 0.1, 0.12), Vector3(1.9 * sx, 0.52, -0.1), GOLD, 0.3, 0.6, wr)
+		box(root, Vector3(0.5, 0.1, 0.7), Vector3(3.1 * sx, 0.5, 0.0), team_col, 0.5, 0.1, wr)
+		box(root, Vector3(1.3, 0.06, 0.7), Vector3(0.9 * sx, 0.62, 1.5), fb, 0.3, 0.55, Vector3(0, 0.3 * sx, 0))
+		var tr := Vector3(0, 0, -0.5 * sx)
+		box(root, Vector3(0.08, 1.2, 1.3), Vector3(0.6 * sx, 1.1, -2.4), fb, 0.3, 0.55, tr)
+		box(root, Vector3(0.09, 0.4, 0.55), Vector3(0.75 * sx, 1.65, -2.6), GOLD, 0.3, 0.6, tr)
+		box(root, Vector3(0.45, 0.4, 1.2), Vector3(0.6 * sx, 0.4, 0.9), Color(0.05, 0.05, 0.06), 0.7)
+		cyl(root, 0.08, 0.08, 1.2, Vector3(1.2 * sx, 0.35, -0.3), IRON, 0.5, 0.3, Vector3(PI / 2.0, 0, 0))
+		cyl(root, 0.0, 0.08, 0.3, Vector3(1.2 * sx, 0.35, 0.4), team_col, 0.5, 0.0, Vector3(PI / 2.0, 0, 0))
+		cyl(root, 0.26, 0.3, 0.5, Vector3(0.32 * sx, 0.55, -2.8), DARK, 0.5, 0.3, Vector3(PI / 2.0, 0, 0))
+		var gl := cyl(root, 0.18, 0.2, 0.1, Vector3(0.32 * sx, 0.55, -3.1), Color(0.4, 0.85, 1.0), 0.4, 0.0, Vector3(PI / 2.0, 0, 0))
+		gl.material_override = glow_mat(Color(0.4, 0.85, 1.0))
 
 
 # ================= المباني (بأرضية مدفونة لتلتصق بالأرض) =================
@@ -1003,8 +1044,10 @@ static func _tower(root: Node3D, team_col: Color) -> void:
 	var t := node(root, Vector3(0, 3.55, 0), "Turret")
 	cyl(t, 0.3, 0.38, 0.45, Vector3(0, 0.1, 0), IRON, 0.5, 0.25)
 	sph(t, 0.42, Vector3(0, 0.45, 0), IRON, Vector3(1, 0.7, 1), 0.5, 0.25)
-	cyl(t, 0.07, 0.09, 1.7, Vector3(0, 0.5, 1.0), DARK, 0.4, 0.25, Vector3(PI / 2.0, 0, 0))
-	cyl(t, 0.12, 0.12, 0.3, Vector3(0, 0.5, 1.85), DARK, 0.4, 0.25, Vector3(PI / 2.0, 0, 0))
+	for bx in [-0.16, 0.16]:
+		cyl(t, 0.06, 0.08, 1.7, Vector3(bx, 0.5, 1.0), DARK, 0.4, 0.4, Vector3(PI / 2.0, 0, 0))
+		cyl(t, 0.1, 0.1, 0.28, Vector3(bx, 0.5, 1.85), DARK, 0.4, 0.4, Vector3(PI / 2.0, 0, 0))
+	box(t, Vector3(0.12, 0.34, 0.12), Vector3(-0.45, 0.45, 0.15), GOLD.darkened(0.1), 0.4, 0.5)
 	box(t, Vector3(0.7, 0.55, 0.06), Vector3(0, 0.55, 0.45), IRON.darkened(0.1), 0.5, 0.3)
 	box(t, Vector3(0.28, 0.2, 0.3), Vector3(-0.45, 0.35, 0.0), Color(0.3, 0.33, 0.22), 0.8)
 	box(t, Vector3(0.6, 0.16, 0.6), Vector3(0, 0.82, -0.1), team_col, 0.6)
@@ -1065,7 +1108,8 @@ static func _aa_turret(root: Node3D, team_col: Color) -> void:
 	box(t, Vector3(1.3, 0.5, 1.0), Vector3(0, 0.75, 0), OLIVE.darkened(0.1), 0.7, 0.1)
 	box(t, Vector3(1.35, 0.12, 1.05), Vector3(0, 1.05, 0), team_col, 0.6)
 	for sx in [-1, 1]:
-		cyl(t, 0.06, 0.08, 1.7, Vector3(0.38 * sx, 1.2, 0.8), DARK, 0.4, 0.4, Vector3(deg_to_rad(55.0), 0, 0))
+		for lv in [0.0, 0.26]:
+			cyl(t, 0.06, 0.08, 1.7, Vector3(0.38 * sx, 1.2 + lv, 0.8), DARK, 0.4, 0.4, Vector3(deg_to_rad(55.0), 0, 0))
 		box(t, Vector3(0.2, 0.22, 0.5), Vector3(0.38 * sx, 0.98, 0.15), IRON, 0.5, 0.3)
 	dish(t, Vector3(-0.35, 1.25, -0.3), 0.32, 0.3)
 	banner(root, Vector3(1.5, 0.6, -1.5), 2.0, team_col, 0.85)
@@ -1095,7 +1139,8 @@ static func _laser_tower(root: Node3D, team_col: Color) -> void:
 	cyl(root, 1.5, 1.8, 0.5, Vector3(0, 0.25, 0), STONE, 0.9)
 	cyl(root, 0.85, 1.1, 1.8, Vector3(0, 1.4, 0), IRON, 0.35, 0.5)
 	for k in range(3):
-		cyl(root, 0.9, 0.9, 0.08, Vector3(0, 0.8 + k * 0.55, 0), team_col, 0.5)
+		var ring := cyl(root, 0.92, 0.92, 0.08, Vector3(0, 0.8 + k * 0.55, 0), Color(0.4, 0.9, 1.0), 0.4)
+		ring.material_override = glow_mat(Color(0.3, 0.8, 1.0))
 	for k in range(4):
 		var a: float = float(k) * PI / 2.0 + 0.78
 		box(root, Vector3(0.14, 1.9, 0.14), Vector3(cos(a) * 1.0, 1.45, sin(a) * 1.0), IRON.darkened(0.2), 0.4, 0.5)
