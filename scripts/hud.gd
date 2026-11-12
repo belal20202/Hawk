@@ -2,10 +2,10 @@ class_name Hud
 extends CanvasLayer
 ## الواجهة: القائمة الرئيسية التفاعلية، شاشة الانتظار، الشريط العلوي، لوحة الأوامر، الخريطة المصغرة
 
-const GOLD := Color(0.96, 0.7, 0.18)
-const INK := Color(0.05, 0.08, 0.1, 0.93)
-const STEEL := Color(0.3, 0.4, 0.42)
-const PANEL := Color(0.07, 0.1, 0.12, 0.95)
+const GOLD := Color(1.0, 0.84, 0.3)
+const INK := Color(0.03, 0.07, 0.15, 0.93)
+const STEEL := Color(0.32, 0.5, 0.74)
+const PANEL := Color(0.04, 0.09, 0.18, 0.95)
 const TIPS := [
 	"ابنِ مقرات تجميع الذهب قرب المناجم لتزيد دخلك.",
 	"قاذفو الصواريخ أفضل سلاح ضد الدبابات والمدرعات.",
@@ -13,9 +13,11 @@ const TIPS := [
 	"القناص بعيد المدى ممتاز ضد المشاة لكنه ضعيف أمام الآليات.",
 	"أي منطقة تكتشفها تبقى ظاهرة لك دائماً، وكذلك ما يدخلها من العدو.",
 	"في نمط 2 ضد 2 يساعدك حليف يقوده الحاسوب بجيشه ومنشآته.",
-	"الأشجار والصخور والأرض غير المستوية تمنع البناء.",
+	"الدفاعات أربعة: رشاش وهاون ومضاد طائرات وليزر، وكلها تدور نحو العدو القريب منها.",
+	"الوحدات التي يمر بجانبها عدو قريب تهاجمه تلقائياً ثم تكمل طريقها.",
 	"المدفعية بعيدة المدى وتدمّر المباني، فاحمها بالمشاة والدبابات.",
-	"احفظ مبارياتك من قائمة الإيقاف في عدة خانات، وستجدها في «المحفوظات».",
+	"لا يوجد حفظ تلقائي: احفظ مبارياتك من قائمة الإيقاف، وستجدها في «المحفوظات».",
+	"العدو يهاجم بمفارز ثم بهجمات متعددة الجهات ثم بهجمات شاملة قوية، فجهّز دفاعك.",
 	"الطرق والجسور أسرع طريق نحو قاعدة العدو.",
 ]
 
@@ -65,6 +67,8 @@ var lbl_diff_info: Label
 var prev_root: Node
 var prev_cache := {}
 var alert_btn: Button
+var privacy_box: Control
+var privacy_scroll: ScrollContainer
 var alert_tw: Tween
 var alert_pos := Vector3.ZERO
 var repair_btn: Button
@@ -158,7 +162,7 @@ func setup(main: Main) -> void:
 func _process(delta: float) -> void:
 	if menu != null and menu.visible and title_lbl != null:
 		var k: float = 0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * 2.2)
-		title_lbl.add_theme_color_override("font_outline_color", Color(0.35 + 0.35 * k, 0.2 + 0.2 * k, 0.03, 0.95))
+		title_lbl.add_theme_color_override("font_outline_color", Color(0.03 + 0.1 * k, 0.1 + 0.25 * k, 0.3 + 0.35 * k, 0.97))
 	if loading != null and loading.visible:
 		tip_t += delta
 		if tip_t > 3.4:
@@ -207,12 +211,12 @@ func _btn(text: String, cb: Callable, min_size := Vector2(92, 66), fs := 18) -> 
 	b.text = text
 	b.custom_minimum_size = min_size
 	b.add_theme_font_size_override("font_size", fs)
-	b.add_theme_stylebox_override("normal", _style(Color(0.08, 0.12, 0.14, 0.96), STEEL, 3, 1))
-	b.add_theme_stylebox_override("hover", _style(Color(0.13, 0.19, 0.21, 0.98), GOLD, 3, 2))
+	b.add_theme_stylebox_override("normal", _style(Color(0.05, 0.1, 0.2, 0.96), STEEL, 3, 1))
+	b.add_theme_stylebox_override("hover", _style(Color(0.09, 0.17, 0.32, 0.98), GOLD, 3, 2))
 	b.add_theme_stylebox_override("pressed", _style(Color(0.2, 0.26, 0.24, 0.98), Color.WHITE, 3, 2))
 	b.add_theme_stylebox_override("disabled", _style(Color(0.08, 0.09, 0.1, 0.9), Color(0.3, 0.3, 0.28), 3, 1))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	b.add_theme_color_override("font_color", Color(0.95, 0.91, 0.82))
+	b.add_theme_color_override("font_color", Color(0.96, 0.98, 1.0))
 	b.pressed.connect(cb)
 	b.resized.connect(func(): b.pivot_offset = b.size / 2.0)
 	b.mouse_entered.connect(func(): _pop(b, 1.05))
@@ -222,7 +226,7 @@ func _btn(text: String, cb: Callable, min_size := Vector2(92, 66), fs := 18) -> 
 	return b
 
 
-func _lbl(text: String, fs := 20, col := Color(0.95, 0.91, 0.82)) -> Label:
+func _lbl(text: String, fs := 20, col := Color(0.96, 0.98, 1.0)) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_size_override("font_size", fs)
@@ -340,9 +344,9 @@ func _build_hud() -> void:
 	hud_root.add_child(toast_lbl)
 
 	alert_btn = _btn("", func(): _alert_go(), Vector2(420, 48), 22)
-	alert_btn.add_theme_stylebox_override("normal", _style(Color(0.62, 0.08, 0.06, 0.95), Color(1, 0.75, 0.3), 12, 3))
-	alert_btn.add_theme_stylebox_override("hover", _style(Color(0.72, 0.1, 0.08, 0.97), Color(1, 0.85, 0.4), 12, 3))
-	alert_btn.add_theme_stylebox_override("pressed", _style(Color(0.5, 0.06, 0.05, 0.97), Color.WHITE, 12, 3))
+	alert_btn.add_theme_stylebox_override("normal", _style(Color(0.7, 0.04, 0.04, 0.96), Color(1.0, 0.2, 0.18), 12, 3))
+	alert_btn.add_theme_stylebox_override("hover", _style(Color(0.8, 0.06, 0.05, 0.97), Color(1.0, 0.3, 0.25), 12, 3))
+	alert_btn.add_theme_stylebox_override("pressed", _style(Color(0.55, 0.03, 0.03, 0.97), Color(1.0, 0.2, 0.18), 12, 3))
 	alert_btn.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	alert_btn.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	alert_btn.offset_top = 116
@@ -367,7 +371,7 @@ func show_alert(msg: String, pos: Vector3) -> void:
 		alert_tw.kill()
 	alert_tw = create_tween()
 	for i in range(8):
-		alert_tw.tween_property(alert_btn, "modulate", Color(1.0, 0.6, 0.6), 0.28)
+		alert_tw.tween_property(alert_btn, "modulate", Color(1.0, 0.45, 0.45), 0.28)
 		alert_tw.tween_property(alert_btn, "modulate", Color.WHITE, 0.28)
 	alert_tw.tween_callback(func(): alert_btn.visible = false)
 
@@ -392,7 +396,7 @@ func _mini_input(ev: InputEvent) -> void:
 
 
 func is_over_ui(p: Vector2) -> bool:
-	if menu.visible or pause_box.visible or end_box.visible or loading.visible or settings_box.visible or saves_box.visible:
+	if menu.visible or pause_box.visible or end_box.visible or loading.visible or settings_box.visible or saves_box.visible or privacy_box.visible:
 		return true
 	for n in ui_nodes:
 		if n is Control and n.visible and n.get_global_rect().has_point(p):
@@ -443,7 +447,22 @@ func set_toggles(amove: bool, box_on: bool) -> void:
 	btn_box.modulate = Color(0.6, 1.0, 0.7) if box_on else Color.WHITE
 
 
+# تنبيه بالأحمر فقط (هجوم، تحذير): نص أحمر بحدّ داكن واضح
+func alert_toast(msg: String, secs := 3.0) -> void:
+	toast_lbl.add_theme_color_override("font_color", Color(1.0, 0.16, 0.14))
+	toast_lbl.add_theme_color_override("font_outline_color", Color(0.12, 0.0, 0.0, 1.0))
+	toast_lbl.text = msg
+	toast_lbl.modulate.a = 1.0
+	if toast_tween != null:
+		toast_tween.kill()
+	toast_tween = create_tween()
+	toast_tween.tween_interval(secs)
+	toast_tween.tween_property(toast_lbl, "modulate:a", 0.0, 0.4)
+
+
 func toast(msg: String, secs := 1.8) -> void:
+	toast_lbl.add_theme_color_override("font_color", Color(1.0, 0.97, 0.88))
+	toast_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	toast_lbl.text = msg
 	toast_lbl.modulate.a = 1.0
 	if toast_tween != null:
@@ -463,10 +482,11 @@ func refresh(force := false) -> void:
 			army_n += 1
 	if top_bar != null:
 		top_bar.set_stats(int(g.gold[0]), g.truck_count(0), army_n, str(Data.MODES[g.mode_key]["name"]))
+		top_bar.set_time(_clock(g.time))
 	else:
 		lbl_gold.text = "الذهب %d" % int(g.gold[0])
 		lbl_trucks.text = "الشاحنات %d  الجيش %d" % [g.truck_count(0), army_n]
-		lbl_mode.text = str(Data.MODES[g.mode_key]["name"])
+		lbl_mode.text = str(Data.MODES[g.mode_key]["name"]) + "  ·  " + _clock(g.time)
 	var sg: String = g.selection_sig()
 	if force or sg != sig:
 		sig = sg
@@ -719,7 +739,7 @@ func _section(num: String, text: String) -> HBoxContainer:
 
 func _chip(text: String, col: Color, dot := false) -> PanelContainer:
 	var pc := PanelContainer.new()
-	pc.add_theme_stylebox_override("panel", _style(Color(0.05, 0.08, 0.09, 0.9), col.darkened(0.2), 2, 1))
+	pc.add_theme_stylebox_override("panel", _style(Color(0.03, 0.07, 0.15, 0.9), col.darkened(0.2), 2, 1))
 	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 8)
@@ -746,11 +766,106 @@ func _seg_style(b: Button, sel: bool) -> void:
 		for k in ["font_color", "font_hover_color", "font_pressed_color"]:
 			b.add_theme_color_override(k, Color(0.08, 0.05, 0.01))
 	else:
-		b.add_theme_stylebox_override("normal", _style(Color(0.07, 0.1, 0.12, 0.96), STEEL, 2, 1))
-		b.add_theme_stylebox_override("hover", _style(Color(0.12, 0.17, 0.19, 0.98), GOLD, 2, 2))
+		b.add_theme_stylebox_override("normal", _style(Color(0.04, 0.09, 0.18, 0.96), STEEL, 2, 1))
+		b.add_theme_stylebox_override("hover", _style(Color(0.09, 0.17, 0.3, 0.98), GOLD, 2, 2))
 		b.add_theme_stylebox_override("pressed", _style(Color(0.2, 0.26, 0.24, 0.98), Color.WHITE, 2, 2))
 		for k in ["font_color", "font_hover_color", "font_pressed_color"]:
 			b.add_theme_color_override(k, Color(0.88, 0.93, 0.9))
+
+
+# لوحة زجاجية شبه شفافة خلف مجموعة نصوص لتبقى واضحة فوق الخلفية المتحركة
+func _glass(inner: Control) -> PanelContainer:
+	var pc := PanelContainer.new()
+	var st := _style(Color(0.02, 0.06, 0.14, 0.78), Color(0.3, 0.52, 0.85, 0.55), 4, 1)
+	st.set_content_margin_all(10)
+	pc.add_theme_stylebox_override("panel", st)
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc.add_child(inner)
+	return pc
+
+
+# وقت اللعب بصيغة 05:32 (أو 1:05:32 بعد الساعة)
+func _clock(t: float) -> String:
+	var total: int = int(maxf(t, 0.0))
+	var h: int = int(floor(float(total) / 3600.0))
+	var m: int = int(floor(float(total % 3600) / 60.0))
+	var s: int = total % 60
+	if h > 0:
+		return "%d:%02d:%02d" % [h, m, s]
+	return "%02d:%02d" % [m, s]
+
+
+# ---------- سياسة الخصوصية (تُقرأ داخل اللعبة) ----------
+func open_privacy() -> void:
+	if privacy_box == null:
+		return
+	privacy_box.visible = true
+	if privacy_scroll != null:
+		privacy_scroll.scroll_vertical = 0
+	Sfx.play("click")
+
+
+func _build_privacy() -> void:
+	privacy_box = Control.new()
+	_full(privacy_box)
+	privacy_box.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(privacy_box)
+	var dim := ColorRect.new()
+	dim.color = Color(0.0, 0.03, 0.09, 0.9)
+	_full(dim)
+	privacy_box.add_child(dim)
+	var mg := MarginContainer.new()
+	_full(mg)
+	mg.add_theme_constant_override("margin_left", 70)
+	mg.add_theme_constant_override("margin_right", 70)
+	mg.add_theme_constant_override("margin_top", 24)
+	mg.add_theme_constant_override("margin_bottom", 24)
+	privacy_box.add_child(mg)
+	var pc := PanelContainer.new()
+	var st := _style(PANEL, STEEL, 6, 2)
+	st.set_content_margin_all(18)
+	pc.add_theme_stylebox_override("panel", st)
+	mg.add_child(pc)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	pc.add_child(vb)
+	var ttl := _lbl("سياسة الخصوصية", 34, GOLD)
+	ttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(ttl)
+	var upd := _lbl("آخر تحديث: " + PrivacyText.UPDATED + "  ·  تطوير وتصميم " + PrivacyText.DEVELOPER, 16, Color(0.75, 0.85, 1.0))
+	upd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(upd)
+	privacy_scroll = ScrollContainer.new()
+	privacy_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	privacy_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vb.add_child(privacy_scroll)
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 6)
+	privacy_scroll.add_child(body)
+	var secs: Array = []
+	for s in PrivacyText.SECTIONS:
+		secs.append([str(s[0]), str(s[1])])
+	secs.append(["التواصل", PrivacyText.contact_text()])
+	for s in secs:
+		var h := _lbl(str(s[0]), 24, GOLD)
+		h.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		h.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		body.add_child(h)
+		var t := _lbl(str(s[1]), 19, Color(0.96, 0.98, 1.0))
+		t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		body.add_child(t)
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(0, 8)
+		body.add_child(gap)
+	var cb := _btn("إغلاق", func(): privacy_box.visible = false, Vector2(260, 54), 22)
+	_seg_style(cb, true)
+	cb.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	cb.pressed.connect(func(): Sfx.play("click"))
+	vb.add_child(cb)
+	privacy_box.visible = false
 
 
 func _build_menu() -> void:
@@ -776,7 +891,18 @@ func _build_menu() -> void:
 	head.add_theme_constant_override("separation", 20)
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(head)
-	head.add_child(IraqBadge.new().setup(84.0, true, true))
+	var lv := VBoxContainer.new()
+	lv.custom_minimum_size = Vector2(252, 0)
+	lv.alignment = BoxContainer.ALIGNMENT_CENTER
+	lv.add_theme_constant_override("separation", 8)
+	lv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(lv)
+	var sb := _btn("الإعدادات", func(): open_settings(), Vector2(200, 44), 18)
+	_seg_style(sb, false)
+	lv.add_child(sb)
+	var pb := _btn("سياسة الخصوصية", func(): open_privacy(), Vector2(200, 44), 18)
+	_seg_style(pb, false)
+	lv.add_child(pb)
 	var tv := VBoxContainer.new()
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tv.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -784,51 +910,48 @@ func _build_menu() -> void:
 	head.add_child(tv)
 	var title := _lbl("صقور الرافدين", 62, GOLD)
 	title.add_theme_constant_override("outline_size", 10)
-	title.add_theme_color_override("font_outline_color", Color(0.25, 0.16, 0.02, 0.95))
+	title.add_theme_color_override("font_outline_color", Color(0.02, 0.06, 0.2, 0.97))
 	title.resized.connect(func(): title.pivot_offset = title.size / 2.0)
 	title_lbl = title
 	title.set_meta("noscale", true)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tv.add_child(title)
-	sub_lbl = _lbl("استراتيجية حربية ثلاثية الأبعاد  ·  اجمع الذهب  ·  اسحق العدو", 20, Color(0.74, 0.86, 0.82))
+	sub_lbl = _lbl("استراتيجية حربية ثلاثية الأبعاد  ·  اجمع الذهب  ·  اسحق العدو", 20, Color(0.8, 0.9, 1.0))
 	sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tv.add_child(sub_lbl)
 	var rv := VBoxContainer.new()
-	rv.custom_minimum_size = Vector2(252, 0)   # نفس عرض شارة «صنع في العراق» ليبقى العنوان في المنتصف تماماً
+	rv.custom_minimum_size = Vector2(252, 0)   # نفس عرض العمود الأيسر ليبقى العنوان في المنتصف تماماً
 	rv.alignment = BoxContainer.ALIGNMENT_CENTER
 	rv.add_theme_constant_override("separation", 8)
 	rv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_child(rv)
 	rv.add_child(_chip("جاهز للمعركة", Color(0.36, 0.9, 0.52), true))
 	rv.add_child(_chip("الإصدار " + Data.VERSION, Color(0.7, 0.8, 0.8)))
-	var sb := _btn("الإعدادات", func(): open_settings(), Vector2(170, 44), 18)
-	_seg_style(sb, false)
-	rv.add_child(sb)
-	var rule := ColorRect.new()
-	rule.color = Color(GOLD.r, GOLD.g, GOLD.b, 0.85)
-	rule.custom_minimum_size = Vector2(0, 3)
-	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(rule)
 
 	# ---- اختيار الجيش
+	var abox := VBoxContainer.new()
+	abox.add_theme_constant_override("separation", 6)
+	abox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(_glass(abox))
 	var sec1 := _section("01", "اختيار الجيش")
-	v.add_child(sec1)
+	abox.add_child(sec1)
 	var arow := HBoxContainer.new()
 	arow.add_theme_constant_override("separation", 12)
 	arow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(arow)
+	arow.alignment = BoxContainer.ALIGNMENT_CENTER
+	abox.add_child(arow)
 	for k in Data.ARMIES.keys():
 		var card := _army_card(k)
 		arow.add_child(card)
 		army_btns[k] = card
-	lbl_army_info = _lbl("", 16, Color(0.85, 0.92, 0.8))
-	v.add_child(lbl_army_info)
+	lbl_army_info = _lbl("", 16, Color(0.85, 0.94, 1.0))
+	abox.add_child(lbl_army_info)
 
 	# ---- النمط والصعوبة
 	var mrow := HBoxContainer.new()
 	mrow.add_theme_constant_override("separation", 30)
 	mrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(mrow)
+	v.add_child(_glass(mrow))
 	var mcol := VBoxContainer.new()
 	mcol.add_theme_constant_override("separation", 6)
 	mcol.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -856,7 +979,7 @@ func _build_menu() -> void:
 		var db := _btn(str(Data.DIFF[k]["name"]), func(): _pick_diff(k), Vector2(124, 48), 18)
 		drow.add_child(db)
 		diff_btns[k] = db
-	lbl_diff_info = _lbl("", 14, Color(0.95, 0.82, 0.68))
+	lbl_diff_info = _lbl("", 14, Color(0.82, 0.92, 1.0))
 	dcol.add_child(lbl_diff_info)
 
 	var spacer := Control.new()
@@ -902,7 +1025,7 @@ func _build_menu() -> void:
 
 func _army_card(k: String) -> Button:
 	var a: Dictionary = Data.ARMIES[k]
-	var b := _btn("", func(): _pick_army(k), Vector2(290, 150), 16)
+	var b := _btn("", func(): _pick_army(k), Vector2(270, 150), 16)
 	var cv := VBoxContainer.new()
 	cv.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -962,7 +1085,7 @@ func _pick_diff(k: String) -> void:
 
 func _card_style(col: Color, sel: bool) -> StyleBoxFlat:
 	var st := StyleBoxFlat.new()
-	st.bg_color = Color(0.12, 0.17, 0.19, 0.98) if sel else Color(0.07, 0.1, 0.12, 0.95)
+	st.bg_color = Color(0.09, 0.17, 0.3, 0.98) if sel else Color(0.04, 0.09, 0.18, 0.95)
 	st.border_color = GOLD if sel else STEEL
 	st.border_width_left = 9 if sel else 6
 	st.border_width_right = 2 if sel else 1
@@ -1028,6 +1151,7 @@ func _build_overlays() -> void:
 	_build_loading()
 	_build_settings()
 	_build_saves()
+	_build_privacy()
 
 
 func _confirm_press(st: Dictionary, text: String, ctext: String, action: Callable) -> void:
@@ -1098,7 +1222,7 @@ func _overlay(title: String, width: float) -> Array:
 	_full(cc)
 	bg.add_child(cc)
 	var pc := PanelContainer.new()
-	pc.add_theme_stylebox_override("panel", _style(Color(0.06, 0.09, 0.11, 0.98), GOLD, 4, 2))
+	pc.add_theme_stylebox_override("panel", _style(Color(0.03, 0.07, 0.15, 0.98), GOLD, 4, 2))
 	pc.custom_minimum_size = Vector2(width, 0)
 	cc.add_child(pc)
 	var v := VBoxContainer.new()
@@ -1232,6 +1356,9 @@ func _delete_slot(id: String) -> void:
 
 # يغلق نافذة الإعدادات أو المحفوظات إن كانت مفتوحة (لزر الرجوع)
 func close_overlays() -> bool:
+	if privacy_box != null and privacy_box.visible:
+		privacy_box.visible = false
+		return true
 	if settings_box.visible:
 		settings_box.visible = false
 		return true
@@ -1326,7 +1453,7 @@ func _make_box(title: String, buttons: Array) -> Control:
 	_full(cc)
 	bg.add_child(cc)
 	var pc := PanelContainer.new()
-	pc.add_theme_stylebox_override("panel", _style(Color(0.06, 0.09, 0.11, 0.98), GOLD, 4, 2))
+	pc.add_theme_stylebox_override("panel", _style(Color(0.03, 0.07, 0.15, 0.98), GOLD, 4, 2))
 	cc.add_child(pc)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 12)
