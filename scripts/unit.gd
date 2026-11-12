@@ -53,6 +53,8 @@ var stuck_acc := 0.0
 var stuck_ref := Vector3.ZERO
 var stuck_cnt := 0
 var scan_t := 0.0
+var sep_v := Vector2.ZERO               # إزاحة تباعد متبقية (تمنع التداخل بسلاسة)
+var resume_cell := Vector2i(-1, -1)      # وجهة الطريق الأصلية بعد صدّ عدو مرّ قريباً
 var ui_made := false
 var mscale := 1.0   # تكبير مجسّم الوحدة ليظهر بوضوح فوق المدينة
 static var _disc_mats := {}
@@ -80,6 +82,8 @@ func setup(main: Main, t: String, tm: int, pos: Vector3) -> void:
 		alt = 10.0
 	elif t == "bomber":
 		alt = 12.0
+	elif t == "falcon":
+		alt = 11.0
 	position = pos + Vector3(0, alt, 0)
 	stuck_ref = position
 	var c := Vector3(Data.MAP * Data.CELL * 0.5, 0, Data.MAP * Data.CELL * 0.5)
@@ -316,6 +320,12 @@ func _process(delta: float) -> void:
 		_truck_logic(delta)
 	else:
 		_logic(delta)
+	# تباعد سلس عن الوحدات القريبة: لا تداخل ولا اصطدام (تُحسب الإزاحة في Main._separate)
+	if sep_v.length_squared() > 0.0001:
+		var sk: float = clampf(delta * 10.0, 0.0, 1.0)
+		var sstep: Vector2 = sep_v * sk
+		sep_v -= sstep
+		g._try_move(self, sstep.x, sstep.y)
 	var gy: float = g.terrain.height_at(position.x, position.z)
 	position.y = lerpf(position.y, gy + alt, clampf(delta * 5.0, 0.0, 1.0))
 	# وحدة بعيدة عن الكاميرا لا تُرى: نتوقف عن تحريك مفاصلها وتأثيراتها (توفير معالجة)
@@ -535,9 +545,20 @@ func _logic(delta: float) -> void:
 			if hurt_t > 0.0:
 				bonus += 6.0
 			var r: float = (float(def["range"]) + (2.5 if amove else 3.0) + bonus) * Data.CELL
-			var e: Variant = g.nearest_enemy(position, team, r, not noair, type == "aa" or type == "jet")
+			var e: Variant = g.nearest_enemy(position, team, r, not noair, type == "aa" or type == "jet" or type == "falcon")
 			if e != null:
 				tgt = e
+				path = []
+	elif tgt == null:
+		# وحدة تتحرك بأمر عادي: إن مرّ عدو قريب منها تهاجمه تلقائياً ثم تكمل طريقها
+		scan_t -= delta
+		if scan_t <= 0.0:
+			scan_t = 0.35 + randf() * 0.15
+			var rn: float = (float(def["range"]) + 1.5) * Data.CELL
+			var en: Variant = g.nearest_enemy(position, team, rn, not noair, type == "aa" or type == "jet" or type == "falcon", true)
+			if en != null:
+				resume_cell = goal
+				tgt = en
 				path = []
 	if tgt != null:
 		var tp: Vector3 = tgt.center()
@@ -561,6 +582,11 @@ func _logic(delta: float) -> void:
 				cd = float(def["cd"])
 	elif not path.is_empty():
 		_move_along(delta)
+	elif resume_cell.x >= 0:
+		var rc: Vector2i = resume_cell
+		resume_cell = Vector2i(-1, -1)
+		if not amove:
+			goto_cell(rc)
 	elif amove and dest.x >= 0:
 		var dc: Vector3 = g.cell_center(dest)
 		if Vector2(dc.x - position.x, dc.z - position.z).length() > Data.CELL * 1.5:
@@ -637,7 +663,7 @@ func _fire_sound() -> String:
 			return "aa"
 		"heli":
 			return "heli_gun"
-		"jet":
+		"jet", "falcon":
 			return "jet_gun"
 		"bomber":
 			return "bomb"
