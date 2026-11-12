@@ -19,7 +19,7 @@ var sel: Array = []
 var gold: Array = [0.0, 0.0, 0.0, 0.0]
 var income: Array = [0.0, 0.0, 0.0, 0.0]
 var gain_acc: Array = [0.0, 0.0, 0.0, 0.0]
-var army_of: Array = ["red", "blue", "yellow", "white"]
+var army_of: Array = ["red", "blue", "yellow", "purple"]
 var team_of: Array = [0, -1, 1, -1]
 var players: Array = [0, 2]
 var mode_key := "1v1"
@@ -116,9 +116,6 @@ func _notification(what: int) -> void:
 			pass
 		else:
 			get_tree().quit()
-	elif what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
-		# حماية من إغلاق النظام للتطبيق: حفظ تلقائي في خانة مستقلة، لا يلمس محفوظاتك
-		save_game(false, AUTO_SLOT)
 
 
 func _build_environment() -> void:
@@ -126,10 +123,10 @@ func _build_environment() -> void:
 	var env := Environment.new()
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color(0.22, 0.42, 0.74)
-	sm.sky_horizon_color = Color(0.86, 0.82, 0.72)
-	sm.ground_horizon_color = Color(0.78, 0.7, 0.55)
-	sm.ground_bottom_color = Color(0.45, 0.38, 0.28)
+	sm.sky_top_color = Color(0.16, 0.4, 0.82)
+	sm.sky_horizon_color = Color(0.74, 0.86, 0.96)
+	sm.ground_horizon_color = Color(0.82, 0.76, 0.6)
+	sm.ground_bottom_color = Color(0.5, 0.44, 0.32)
 	sky.sky_material = sm
 	env.sky = sky
 	env.background_mode = Environment.BG_SKY
@@ -148,7 +145,7 @@ func _build_environment() -> void:
 	add_child(we)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-50.0, -35.0, 0.0)
-	sun.light_energy = 1.55
+	sun.light_energy = 1.7
 	sun.light_color = Color(1.0, 0.95, 0.84)
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
@@ -188,7 +185,7 @@ func _on_progress(p: float, text: String) -> void:
 
 
 func _assign_armies(human_key: String) -> void:
-	var keys := ["red", "blue", "yellow", "white"]
+	var keys := ["red", "blue", "yellow", "purple"]
 	army_of = ["", "", "", ""]
 	army_of[0] = human_key
 	var rest: Array = keys.filter(func(k): return k != human_key)
@@ -415,6 +412,8 @@ func read_slot(id: String) -> Dictionary:
 	if parsed is Dictionary:
 		var d: Dictionary = parsed
 		d["slot"] = id
+		if str(d.get("army", "")) == "white":
+			d["army"] = "purple"
 		return d
 	return {}
 
@@ -436,6 +435,9 @@ func list_saves() -> Array:
 	while fn != "":
 		if not dir.current_is_dir() and fn.ends_with(".json"):
 			var id := fn.get_basename()
+			if id == AUTO_SLOT:
+				fn = dir.get_next()
+				continue
 			var d := read_slot(id)
 			if not d.is_empty():
 				out.append({"id": id, "ts": int(d.get("ts", 0)), "date": str(d.get("date", "")), "mode": str(d.get("mode", "1v1")), "diff": str(d.get("diff", "normal")), "army": str(d.get("army", "red")), "time": float(d.get("time", 0.0))})
@@ -501,6 +503,8 @@ func _restore(d: Dictionary) -> void:
 	for i in range(mini(ma.size(), mines.size())):
 		_set_mine_amount(mines[i], float(ma[i]))
 	for bd in d.get("buildings", []):
+		if not Data.BUILDINGS.has(str(bd["t"])):
+			continue
 		var built: bool = float(bd["con"]) >= 1.0
 		var b := add_building(str(bd["t"]), int(bd["o"]), Vector2i(int(bd["cx"]), int(bd["cy"])), built)
 		b.con = float(bd["con"])
@@ -512,6 +516,8 @@ func _restore(d: Dictionary) -> void:
 		if int(bd.get("rx", -1)) >= 0:
 			b.rally = Vector2i(int(bd["rx"]), int(bd["ry"]))
 	for ud in d.get("units", []):
+		if not Data.UNITS.has(str(ud["t"])):
+			continue
 		var u := spawn_unit(str(ud["t"]), int(ud["o"]), Vector3(float(ud["x"]), 0.0, float(ud["z"])))
 		u.hp = float(ud["hp"])
 		u.load_gold = float(ud.get("lg", 0.0))
@@ -890,7 +896,7 @@ func repair_building(b) -> void:
 	hud.refresh(true)
 
 
-func nearest_enemy(pos: Vector3, team: int, rad: float, can_air: bool, air_first := false) -> Variant:
+func nearest_enemy(pos: Vector3, team: int, rad: float, can_air: bool, air_first := false, units_only := false) -> Variant:
 	var best = null
 	var bd := rad * rad
 	var best_air = null
@@ -914,6 +920,8 @@ func nearest_enemy(pos: Vector3, team: int, rad: float, can_air: bool, air_first
 		return best_air
 	if best != null:
 		return best
+	if units_only:
+		return null
 	var bb = null
 	var bbd := rad * rad
 	for b in blds:
@@ -1036,15 +1044,10 @@ func deliver(team: int, amount: float) -> void:
 	var a: Dictionary = Data.ARMIES[army_of[team]]
 	var mult: float = float(a.get("inc", 1.0))
 	if hostile(team, 0):
-		mult *= float(Data.DIFF[diff]["gm"]) * boost
+		# دخل العدو يزداد تدريجياً مع طول المباراة (حتى +60٪) فيشتد الضغط كلما طال اللعب
+		mult *= float(Data.DIFF[diff]["gm"]) * boost * (1.0 + minf(time / 1500.0, 0.6))
 	elif team != 0:
 		mult *= 0.9
-	# كل مصفاة ذهب (حتى ثلاث) تزيد دخل الشحنة
-	var refs := 0
-	for b in blds:
-		if b.team == team and not b.dead and b.con >= 1.0 and b.type == "ref":
-			refs += 1
-	mult *= 1.0 + float(Data.BUILDINGS["ref"]["income"]) * float(mini(refs, 3))
 	var v: float = amount * mult
 	gold[team] += v
 	gain_acc[team] += v
@@ -1135,18 +1138,16 @@ func _build_minimap_base() -> void:
 		var t: int = terrain.types[i]
 		var mx: int = i % n
 		var my: int = floori(float(i) / float(n))
-		# صحراء: رمل ذهبي وتربة وبيوت وماء أزرق
-		var c := Color(0.84, 0.72, 0.5)
+		# صحراء رملية وسهوب خضراء وبحيرات زرقاء وجسور خشبية (لا بيوت ولا مبانٍ على الخريطة)
+		var c := Color(0.93, 0.8, 0.52)
 		if t == 1:
-			c = Color(0.76, 0.62, 0.4)
+			c = Color(0.6, 0.66, 0.34)
 		elif t == 2:
 			c = Color(0.55, 0.46, 0.36)
 		elif t == 3:
-			c = Color(0.16, 0.42, 0.6)
+			c = Color(0.1, 0.42, 0.78)
 		elif t == 4:
-			c = Color(0.42, 0.32, 0.22)
-		elif t == 6:
-			c = Color(0.62, 0.5, 0.36)
+			c = Color(0.5, 0.33, 0.18)
 		bytes[i * 4] = int(c.r * 255.0)
 		bytes[i * 4 + 1] = int(c.g * 255.0)
 		bytes[i * 4 + 2] = int(c.b * 255.0)
@@ -1262,6 +1263,7 @@ func stop_selected() -> void:
 			e.route = []
 			e.tgt = null
 			e.amove = false
+			e.resume_cell = Vector2i(-1, -1)
 	Sfx.play("click")
 
 
@@ -1287,6 +1289,7 @@ func order_move(us: Array, wp: Vector3, am: bool) -> void:
 		u.tgt = null
 		u.forced = false
 		u.route = []
+		u.resume_cell = Vector2i(-1, -1)
 		u.amove = am
 		u.dest = goal
 		u.goto_cell(goal)
@@ -1437,6 +1440,7 @@ func _tap(sp: Vector2, btn: int) -> void:
 				u.forced = true
 				u.path = []
 				u.amove = false
+				u.resume_cell = Vector2i(-1, -1)
 			_marker(hit.position, Color(1, 0.4, 0.3))
 			Sfx.play("click")
 		elif gp != null:
@@ -1659,7 +1663,7 @@ func _process(delta: float) -> void:
 
 
 # ---------- المؤثرات ----------
-func spawn_tracer(a: Vector3, b: Vector3, big: bool) -> void:
+func spawn_tracer(a: Vector3, b: Vector3, big: bool, col := Color(0, 0, 0, 0)) -> void:
 	var ln: float = a.distance_to(b)
 	if ln < 0.2:
 		return
@@ -1671,6 +1675,8 @@ func spawn_tracer(a: Vector3, b: Vector3, big: bool) -> void:
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.albedo_color = Color(1.0, 0.75, 0.3) if big else Color(1.0, 0.92, 0.55)
+	if col.a > 0.0:
+		m.albedo_color = col
 	mi.material_override = m
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	world.add_child(mi)
