@@ -1,7 +1,7 @@
 class_name Terrain
 extends Node3D
 ## تضاريس 3D: صحراء مستوية بلا مرتفعات ولا أشجار، فيها قرى من البيوت ومعالم من الحضارة العراقية، ويحيط بها بحر واقعي
-## مع بضع بحيرات تعبرها جسور. القرى والمعالم في scripts/city.gd (تُحمَّل ديناميكياً).
+## مع بضع بحيرات تعبرها جسور. لا بيوت ولا مبانٍ على الخريطة.
 ## الأنواع: 0 رمل، 1 تراب متماسك، 2 صخر، 3 ماء، 4 جسر، 5 غير مستخدم، 6 بيت أو معلم أثري (عائق)
 ## build_block: 1 = لا يمكن البناء (شجر أو حجر أو أثر)
 
@@ -91,7 +91,7 @@ func _gen_types(seed_val: int) -> void:
 	var nl := _noise(seed_val + 37, 0.06, 2)
 	# بحيرات قليلة: x, y, نصف القطر الأفقي، نصف القطر العمودي (بإحداثيات الخريطة الأساسية 256)
 	var lakes: Array = []
-	for l in [[128, 128, 15, 11], [80, 92, 11, 8], [174, 162, 11, 8], [100, 52, 10, 7], [154, 202, 10, 7]]:
+	for l in [[128, 128, 15, 11], [80, 92, 11, 8], [174, 162, 11, 8], [100, 52, 10, 7], [154, 202, 10, 7], [60, 128, 8, 12], [196, 128, 8, 12], [128, 70, 12, 8], [128, 186, 12, 8]]:
 		lakes.append([roundi(l[0] * K), roundi(l[1] * K), maxf(l[2] * K * 0.85, 4.0), maxf(l[3] * K * 0.85, 4.0)])
 	types.resize(n * n)
 	for y in n:
@@ -101,7 +101,7 @@ func _gen_types(seed_val: int) -> void:
 		for x in n:
 			var v: float = (nb.get_noise_2d(x, y) * 0.65 + nd.get_noise_2d(x, y) * 0.35) * 0.5 + 0.5
 			var t := 0
-			if v < 0.22:
+			if v < 0.4:
 				t = 1
 			# البحر المحيط بالخريطة بشاطئ متعرج
 			var ed: int = mini(mini(x, y), mini(n - 1 - x, n - 1 - y))
@@ -128,17 +128,14 @@ func _gen_types(seed_val: int) -> void:
 		for y in range(by2 - 15, by2 + 16):
 			for x in range(bx - 15, bx + 16):
 				if x >= 0 and y >= 0 and x < n and y < n and (x - bx) * (x - bx) + (y - by2) * (y - by2) < 200:
-					types[idx(x, y)] = 1 if (x * 7 + y * 3) % 11 == 0 else 0
+					types[idx(x, y)] = 0
 	for m in Data.MINES:
 		for y in range(m.y - 2, m.y + 4):
 			for x in range(m.x - 2, m.x + 4):
 				if x >= 0 and y >= 0 and x < n and y < n:
 					types[idx(x, y)] = 0
+	# لا بيوت ولا مبانٍ على الخريطة: أرض وبحيرات وجسور فقط
 	landmarks = []
-	# تخطيط المدينة (تحميل ديناميكي: أي خطأ فيها لا يُسقط اللعبة)
-	var cs = load("res://scripts/city.gd")
-	if cs != null:
-		cs.plan(self, seed_val)
 
 
 # جسر بعرض 7 خلايا (تعبره الدبابات الثقيلة) يمر بمركز البحيرة ويمتد لليابسة على الطرفين
@@ -334,7 +331,7 @@ func footprint(c: Vector2i, s: int) -> Vector2:
 func type_color(t: int) -> Color:
 	match t:
 		1:
-			return Color(0.8, 0.66, 0.43)
+			return Color(0.6, 0.66, 0.33)
 		2:
 			return Color(0.6, 0.5, 0.38)
 		3:
@@ -345,7 +342,7 @@ func type_color(t: int) -> Color:
 			return Color(0.8, 0.66, 0.43)
 		6:
 			return Color(0.78, 0.66, 0.46)
-	return Color(0.88, 0.75, 0.52)
+	return Color(0.96, 0.82, 0.55)
 
 
 # سطح الأرض قطع صغيرة (36 قطعة) بدقة نصف خلية: الكاميرا لا ترسم إلا القطع الظاهرة، والرؤوس أقل بأربعة أضعاف،
@@ -406,7 +403,7 @@ func _build_mesh() -> void:
 							rd = maxf(rd, road_w[ci])
 							cnt += 1.0
 					c = c / maxf(cnt, 1.0)
-					c = c.lerp(Color(0.66, 0.52, 0.34), rd * 0.75)
+					c = c.lerp(Color(0.78, 0.64, 0.42), rd * 0.7)
 					if hh < WATER_Y:
 						c = c.lerp(Color(0.2, 0.36, 0.36), clampf(-hh / 2.6, 0.0, 0.75))
 					var v: float = 0.92 + _hs(i, j) * 0.16
@@ -633,11 +630,6 @@ func _build_details(seed_val: int) -> void:
 	var acacias := {}
 	var poplars := {}
 	var tn := _noise(seed_val + 77, 0.05, 2)
-	var cs = load("res://scripts/city.gd")
-	if cs != null:
-		_p(0.81, "جاري بناء المدينة والمعالم...")
-		await get_tree().process_frame
-		cs.spawn(self)
 	for y in n:
 		if y % 30 == 0:
 			_p(0.8 + 0.1 * float(y) / n, "جاري زرع الأشجار وبناء الجسور...")
@@ -661,7 +653,7 @@ func _build_details(seed_val: int) -> void:
 					_add_inst(pylons, cxw, czw, Transform3D(Basis.IDENTITY, Vector3(cxw, FLAT_Y - 1.95, czw)), Color(0.4, 0.34, 0.28))
 				continue
 			if t == 0 or t == 1 or t == 5:
-				if road_w[ci] > 0.05 or _near_base(x, y, 15.0) or x % 26 < 4 or y % 26 < 4:
+				if road_w[ci] > 0.05 or _near_base(x, y, 15.0):
 					# لا أشجار هنا: نحوّل خلية الغابة إلى أرض مفتوحة كي لا تبقى عائقاً غير مرئي
 					if t == 5:
 						types[ci] = 0
