@@ -1,8 +1,8 @@
 class_name GameSettings
 extends RefCounted
 ## إعدادات الجودة والإطارات (تُحفظ في user://graphics.cfg وتُطبَّق فوراً وفعلياً على المحرك).
-## الجودة: 0 منخفضة، 1 متوسطة، 2 عالية، 3 تلقائية (الأفضل: تضبط دقة العرض لحظياً لتثبيت 40 إطاراً أو أكثر).
-## الهدف: لعبة سلسة على الأجهزة المتوسطة: ظلال ديناميكية قليلة، تنعيم حواف خفيف، وتفاصيل بعيدة أقل.
+## الجودة: 0 منخفضة، 1 متوسطة، 2 عالية، 3 تلقائية (الأفضل: تكتشف قوة الهاتف وتضبط الرسوميات والدقة لحظياً لتبقى الإطارات بين 40 و100).
+## الهاتف الضعيف يبدأ بإعدادات خفيفة سريعة، والمتوسط والقوي يحصلان على رسوميات أعلى وإطارات حتى 100.
 
 const PATH := "user://graphics.cfg"
 const QUALITY_NAMES := ["منخفضة", "متوسطة", "عالية", "تلقائية"]
@@ -10,17 +10,18 @@ const QUALITY_HINTS := [
 	"منخفضة: بلا ظلال ولا تنعيم حواف، دقة العرض 75٪، وتفاصيل أقل. للهواتف الضعيفة.",
 	"متوسطة: ظلال خفيفة قريبة، دقة العرض 88٪، وحواف مصقولة. الأنسب لأغلب الهواتف.",
 	"عالية: ظلال كاملة للمباني والوحدات، دقة 100٪ وحواف ناعمة. للهواتف القوية.",
-	"تلقائية (الأفضل): تضبط دقة العرض لحظياً لتثبيت 40 إطاراً أو أكثر على هاتفك.",
+	"تلقائية (الأفضل): تكتشف قوة هاتفك وترفع الرسوميات تلقائياً إن كان متوسطاً أو قوياً، وتخفضها إن نزلت الإطارات عن 40.",
 ]
-const FPS_VALUES := [30, 60, 0]
-const FPS_NAMES := ["30", "60", "أقصى"]
+const FPS_VALUES := [30, 60, 100, 0]
+const FPS_NAMES := ["30", "60", "100", "تلقائي"]
 const FPS_HINTS := [
 	"30 إطاراً: أقل استهلاكاً للبطارية وحرارة أقل.",
 	"60 إطاراً: حركة سلسة.",
-	"أقصى: بلا حد، ويتبع معدل تحديث الشاشة.",
+	"100 إطار: أقصى سلاسة للهواتف القوية.",
+	"تلقائي (الأفضل): بين 40 و100 إطار حسب قوة هاتفك ومعدل تحديث شاشتك.",
 ]
 const SCALES := [0.75, 0.88, 1.0]
-const CFG_VER := 3
+const CFG_VER := 4
 const FX := [0.35, 0.7, 1.0]
 const VEG := [0.45, 0.7, 1.0]
 const ATLAS := [1024, 1024, 2048]
@@ -31,11 +32,16 @@ static var quality := 3
 static var brightness := 1.0   # 0.7 .. 1.3
 static var contrast := 1.0     # 0.8 .. 1.3
 static var saturation := 1.0   # 0.5 .. 1.5
-static var fps := 60           # 30 / 60 / 0 (بلا حد)
-static var show_fps := false
+static var fps := 0            # 30 / 60 / 100 / 0 (تلقائي: حتى 100)
+static var show_fps := true
+static var tier := 1           # قوة الجهاز: 0 ضعيف، 1 متوسط، 2 قوي
+static var auto_level := 1     # إعداد الجودة الفعلي في الوضع التلقائي
+static var auto_max := 2
+static var _low_n := 0
+static var _high_n := 0
+static var _lvl_cd := 0.0
 static var loaded := false
 static var auto_scale := 0.8
-static var auto_low := false   # في الوضع التلقائي: إيقاف الظلال مؤقتاً إن بقي الأداء ضعيفاً
 static var _acc := 0.0
 static var _last_p := -1
 
@@ -48,7 +54,7 @@ static func auto_quality() -> int:
 # الإعداد الفعلي المستخدم: التلقائية تعمل على أساس المتوسطة (أو المنخفضة مؤقتاً عند ضعف الأداء)
 static func preset() -> int:
 	if quality >= 3:
-		return 0 if auto_low else 1
+		return clampi(auto_level, 0, 2)
 	return quality
 
 
@@ -58,7 +64,7 @@ static func fx_scale() -> float:
 
 static func fps_index() -> int:
 	var i: int = FPS_VALUES.find(fps)
-	return 1 if i < 0 else i
+	return 3 if i < 0 else i
 
 
 static func load_cfg() -> void:
@@ -66,16 +72,20 @@ static func load_cfg() -> void:
 		return
 	loaded = true
 	quality = auto_quality()
-	auto_scale = 0.7 if OS.get_processor_count() <= 4 else 0.8
+	tier = detect_tier()
+	auto_level = tier
+	auto_max = 2
+	auto_scale = [0.7, 0.85, 1.0][tier]
 	var cf := ConfigFile.new()
 	if cf.load(PATH) == OK:
 		# إعداد الجودة المحفوظ من نسخة قديمة يُتجاهل مرة واحدة (كان غالباً «منخفضة» أو «عالية» بلا قياس)
 		if int(cf.get_value("gfx", "ver", 0)) >= CFG_VER:
 			quality = clampi(int(cf.get_value("gfx", "quality", quality)), 0, 3)
-		fps = int(cf.get_value("gfx", "fps", 60))
-		show_fps = bool(cf.get_value("gfx", "show_fps", false))
+		if int(cf.get_value("gfx", "ver", 0)) >= CFG_VER:
+			fps = int(cf.get_value("gfx", "fps", 0))
+			show_fps = bool(cf.get_value("gfx", "show_fps", true))
 		if not FPS_VALUES.has(fps):
-			fps = 60
+			fps = 0
 
 
 static func save_cfg() -> void:
@@ -102,7 +112,7 @@ static func apply(main: Main) -> void:
 	vp.scaling_3d_scale = auto_scale if quality >= 3 else float(SCALES[p])
 	vp.msaa_3d = Viewport.MSAA_2X if p == 2 else Viewport.MSAA_DISABLED
 	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if p == 1 else Viewport.SCREEN_SPACE_AA_DISABLED
-	Engine.max_fps = fps
+	Engine.max_fps = 100 if fps == 0 else fps
 	if p != _last_p:
 		_last_p = p
 		RenderingServer.directional_shadow_atlas_set_size(int(ATLAS[p]), true)
@@ -152,7 +162,68 @@ static func apply_shadows(main: Main, on: bool) -> void:
 				(m as MultiMeshInstance3D).cast_shadow = mode
 
 
-# الجودة التلقائية: كل ثانية ونصف نقيس الإطارات ونرفع أو نخفض دقة العرض بخطوات صغيرة
+# قوة الجهاز من عدد الأنوية والذاكرة ونوع المعالج الرسومي: 0 ضعيف، 1 متوسط، 2 قوي
+static func detect_tier() -> int:
+	var score := 0
+	var cores: int = OS.get_processor_count()
+	if cores >= 8:
+		score += 2
+	elif cores >= 6:
+		score += 1
+	elif cores <= 4:
+		score -= 1
+	var mi: Dictionary = OS.get_memory_info()
+	var mem: int = int(mi.get("physical", -1))
+	if mem > 0:
+		var gb: float = float(mem) / 1073741824.0
+		if gb >= 7.5:
+			score += 2
+		elif gb >= 5.5:
+			score += 1
+		elif gb < 3.5:
+			score -= 1
+	var gpu: String = RenderingServer.get_video_adapter_name().to_lower()
+	var rx := RegEx.new()
+	if "adreno" in gpu:
+		rx.compile("(\\d{3})")
+		var m: RegExMatch = rx.search(gpu)
+		if m != null:
+			var n: int = int(m.get_string(1))
+			if n >= 700:
+				score += 2
+			elif n >= 640:
+				score += 1
+			elif n <= 540:
+				score -= 1
+	elif "mali" in gpu:
+		rx.compile("g(\\d+)")
+		var m2: RegExMatch = rx.search(gpu)
+		if m2 != null:
+			var n2: int = int(m2.get_string(1))
+			if n2 >= 710:
+				score += 2
+			elif n2 >= 76:
+				score += 1
+			elif n2 <= 52:
+				score -= 1
+		else:
+			score -= 2
+	elif "apple" in gpu:
+		score += 2
+	elif OS.has_feature("pc"):
+		score += 2
+	if score <= 0:
+		return 0
+	if score <= 2:
+		return 1
+	return 2
+
+
+static func fps_cap() -> float:
+	return 100.0 if fps == 0 else float(fps)
+
+
+# الجودة التلقائية: كل ثانية ونصف نقيس الإطارات. أقل من 40 نخفض الدقة ثم الإعداد، وإن فاضت القوة (قرب 90) نرفعهما.
 static func tick(main: Main, delta: float) -> void:
 	if quality < 3:
 		return
@@ -160,22 +231,41 @@ static func tick(main: Main, delta: float) -> void:
 	if _acc < 1.5:
 		return
 	_acc = 0.0
+	_lvl_cd = maxf(0.0, _lvl_cd - 1.5)
 	var cur: float = Engine.get_frames_per_second()
-	var cap: float = float(fps) if fps > 0 else AUTO_TARGET
-	var target: float = minf(AUTO_TARGET, cap)
+	var cap: float = fps_cap()
+	var floor_fps: float = minf(AUTO_TARGET, cap * 0.9)
+	var up_fps: float = minf(cap * 0.9, 90.0)
+	if cur < floor_fps * 0.95:
+		_low_n += 1
+		_high_n = 0
+	elif cur >= up_fps:
+		_high_n += 1
+		_low_n = 0
+	else:
+		_low_n = 0
+		_high_n = 0
 	var old: float = auto_scale
-	if cur < target * 0.92:
-		auto_scale = maxf(0.55, auto_scale - 0.07)
-	elif cur >= target * 1.25:
-		auto_scale = minf(1.0, auto_scale + 0.03)
-	# أداء ضعيف رغم أقل دقة: نوقف الظلال مؤقتاً، ونعيدها حين يتحسن الأداء كثيراً
-	if not auto_low and auto_scale <= 0.6 and cur < target * 0.85:
-		auto_low = true
-		apply(main)
-		return
-	if auto_low and auto_scale >= 0.85 and cur > target * 1.5:
-		auto_low = false
-		apply(main)
-		return
+	if _low_n >= 1:
+		if auto_scale > 0.58:
+			auto_scale = maxf(0.55, auto_scale - 0.07)
+		elif auto_level > 0 and _low_n >= 3 and _lvl_cd <= 0.0:
+			auto_level -= 1
+			auto_max = auto_level
+			auto_scale = 0.75
+			_lvl_cd = 30.0
+			_low_n = 0
+			apply(main)
+			return
+	elif _high_n >= 3:
+		if auto_scale < 1.0:
+			auto_scale = minf(1.0, auto_scale + 0.05)
+		elif auto_level < auto_max and _high_n >= 6 and _lvl_cd <= 0.0:
+			auto_level += 1
+			auto_scale = 0.85
+			_lvl_cd = 30.0
+			_high_n = 0
+			apply(main)
+			return
 	if absf(auto_scale - old) > 0.001:
 		main.get_viewport().scaling_3d_scale = auto_scale
