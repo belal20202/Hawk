@@ -17,9 +17,9 @@ var sfx_vol := 0.9
 var last_play := {}
 
 # أقل فاصل (ثانية) بين تشغيل الصوت نفسه، لمنع التكدس والتشويش
-const GAP := {"shot": 0.05, "mg": 0.07, "smg": 0.07, "hit": 0.06, "hit_metal": 0.07, "hit_stone": 0.07, "cannon": 0.1, "cannon_light": 0.08, "cannon_heavy": 0.12, "rocket": 0.1, "sniper": 0.1, "artillery": 0.15, "aa": 0.06, "heli_gun": 0.1, "jet_gun": 0.12, "bomb": 0.12, "boom": 0.1, "boom_small": 0.08}
+const GAP := {"shot": 0.05, "mg": 0.07, "smg": 0.07, "hit": 0.06, "hit_metal": 0.07, "hit_stone": 0.07, "cannon": 0.1, "cannon_light": 0.08, "cannon_heavy": 0.12, "rocket": 0.1, "sniper": 0.1, "artillery": 0.15, "aa": 0.06, "heli_gun": 0.1, "jet_gun": 0.12, "laser": 0.1, "bomb": 0.12, "boom": 0.1, "boom_small": 0.08}
 # أصوات القتال يتنوع ارتفاعها قليلاً لتبدو طبيعية
-const VARY := ["shot", "mg", "smg", "hit", "hit_metal", "hit_stone", "cannon", "cannon_light", "cannon_heavy", "rocket", "sniper", "artillery", "aa", "heli_gun", "jet_gun", "bomb", "boom", "boom_small"]
+const VARY := ["shot", "mg", "smg", "hit", "hit_metal", "hit_stone", "cannon", "cannon_light", "cannon_heavy", "rocket", "sniper", "artillery", "aa", "heli_gun", "jet_gun", "laser", "bomb", "boom", "boom_small"]
 # تعديل مستوى الصوت لكل نوع (ديسيبل)
 const GAIN := {"shot": -3.0, "mg": -5.0, "smg": -5.0, "hit": -6.0, "hit_metal": -5.0, "hit_stone": -5.0, "aa": -4.0, "heli_gun": -3.0, "jet_gun": -3.0, "boom": 1.0, "ready_inf": 2.0, "ready_elite": 2.0, "ready_lt": 2.0, "ready_tank": 2.0, "ready_truck": 2.0, "ready_heli": 2.0, "ready_jet": 2.0, "built_hq": 2.0, "built_dep": 2.0, "built_bar": 2.0, "built_fac": 2.0, "built_air": 2.0, "built_twr": 2.0}
 # أصوات مهمة تُقاطع غيرها عند امتلاء المشغّلات
@@ -137,7 +137,7 @@ func _build_extra() -> void:
 	streams["pick_red"] = _wav(_mix(_arp([293.66, 440.0, 587.33], 0.07, 0.34, 0.3), _thud(110.0, 60.0, 0.2, 0.22), 0.0))
 	streams["pick_blue"] = _wav(_arp([329.63, 493.88, 659.25, 987.77], 0.065, 0.34, 0.28))
 	streams["pick_yellow"] = _wav(_mix(_arp([392.0, 587.33, 783.99], 0.07, 0.36, 0.28), _bell(1568.0, 0.4, 0.1), 0.14))
-	streams["pick_white"] = _wav(_mix(_ney(392.0, 0.3, 0.26), _arp([523.25, 698.46], 0.1, 0.36, 0.22), 0.06))
+	streams["pick_purple"] = _wav(_mix(_ney(392.0, 0.3, 0.26), _arp([523.25, 698.46], 0.1, 0.36, 0.22), 0.06))
 	streams["pick_mode"] = _wav(_arp([740.0, 987.77], 0.07, 0.24, 0.28))
 	streams["diff_easy"] = _wav(_arp([783.99, 1174.66], 0.08, 0.3, 0.28))
 	streams["diff_normal"] = _wav(_mix(_arp([587.33, 740.0, 880.0], 0.07, 0.3, 0.28), _thud(150.0, 80.0, 0.16, 0.18), 0.0))
@@ -317,12 +317,12 @@ func set_muted(m: bool) -> void:
 func set_loops(steps: int, engine: int, air: int) -> void:
 	var arr := [steps, engine, air]
 	var keys := ["steps", "engine", "air"]
-	var caps := [0.18, 0.22, 0.2]
+	var caps := [0.035, 0.045, 0.04]
 	for i in 3:
 		var cnt: int = arr[i]
 		var vol := 0.0
 		if cnt > 0 and not muted:
-			vol = minf(0.04 + 0.02 * cnt, float(caps[i])) * sfx_vol
+			vol = minf(0.008 + 0.004 * cnt, float(caps[i])) * sfx_vol
 		loops[keys[i]].volume_db = -80.0 if vol <= 0.0 else linear_to_db(vol)
 
 
@@ -342,6 +342,7 @@ func _build_combat() -> void:
 		["heli_gun", func(): return _s_heli_gun()],
 		["jet_gun", func(): return _s_jet_gun()],
 		["boom_small", func(): return _s_boom(0.6, 0.8, 0.5)],
+		["laser", func(): return _norm(_mix(_whistle(0.18, 2600.0, 700.0, 0.7), _crack(0.03, 0.5, 14.0, 0.3), 0.0), 0.8)],
 		["bomb", func(): return _mix(_whistle(0.4, 1500.0, 450.0, 0.35), _s_boom(0.7, 0.9, 0.7), 0.3)],
 		["boom", func(): return _s_boom(1.1, 1.0, 1.3)],
 		["hit", func(): return _mix(_noise_lp(0.06, 0.5, 0.35, 25.0), _thud(160.0, 90.0, 0.06, 0.4), 0.0)],
