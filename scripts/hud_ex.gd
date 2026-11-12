@@ -28,7 +28,7 @@ class PauseIcon extends Control:
 		var bh: float = size.y * 0.42
 		var y0: float = (size.y - bh) * 0.5
 		var gap: float = size.x * 0.09
-		var col := Color(0.97, 0.92, 0.78)
+		var col := Color(0.98, 0.98, 1.0)
 		draw_rect(Rect2(size.x * 0.5 - gap - bw, y0, bw, bh), col)
 		draw_rect(Rect2(size.x * 0.5 + gap, y0, bw, bh), col)
 
@@ -63,15 +63,15 @@ func _build_hud() -> void:
 	mk.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	mk.offset_right = -12
 	mk.offset_bottom = -10
-	mk.offset_left = -12 - 268
-	mk.offset_top = -10 - 74
+	mk.offset_left = -12 - 300
+	mk.offset_top = -10 - 96
 	hud_root.add_child(mk)
 	# شريط البناء قابل للتمرير الأفقي (مبانٍ كثيرة)، ويترك مكاناً للعلامة أسفل اليمين
 	var par: Node = panel.get_parent()
 	var sc := ScrollContainer.new()
 	sc.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	sc.offset_left = 190
-	sc.offset_right = -292
+	sc.offset_right = -324
 	sc.offset_top = -108
 	sc.offset_bottom = -8
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
@@ -100,6 +100,7 @@ func _tick_fps() -> void:
 	var f: int = int(Engine.get_frames_per_second())
 	if fps_lbl != null and fps_lbl.visible:
 		fps_lbl.text = "%d FPS" % f
+		fps_lbl.add_theme_color_override("font_color", Color(1.0, 0.45, 0.4) if f < 40 else Color(0.6, 1.0, 0.65))
 	if lbl_fps_live != null and settings_box != null and settings_box.visible:
 		lbl_fps_live.text = "المعدل الحالي: %d إطار/ث" % f
 
@@ -107,8 +108,8 @@ func _tick_fps() -> void:
 func _pause_button() -> Button:
 	var b := _btn("", func(): g.pause_game(), Vector2(60, 60), 15)
 	b.add_theme_stylebox_override("normal", _style(INK, GOLD, 30, 2))
-	b.add_theme_stylebox_override("hover", _style(Color(0.12, 0.16, 0.18, 0.98), GOLD.lightened(0.2), 30, 2))
-	b.add_theme_stylebox_override("pressed", _style(Color(0.2, 0.24, 0.22, 0.98), Color.WHITE, 30, 2))
+	b.add_theme_stylebox_override("hover", _style(Color(0.09, 0.16, 0.3, 0.98), GOLD.lightened(0.2), 30, 2))
+	b.add_theme_stylebox_override("pressed", _style(Color(0.14, 0.22, 0.4, 0.98), Color.WHITE, 30, 2))
 	var ic := PauseIcon.new()
 	ic.set_anchors_preset(Control.PRESET_FULL_RECT)
 	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -165,7 +166,7 @@ func _build_pause_menu() -> Control:
 	_full(cc)
 	bg.add_child(cc)
 	var pc := PanelContainer.new()
-	pc.add_theme_stylebox_override("panel", _style(Color(0.06, 0.09, 0.11, 0.98), GOLD, 6, 2))
+	pc.add_theme_stylebox_override("panel", _style(Color(0.03, 0.07, 0.15, 0.98), GOLD, 6, 2))
 	pc.custom_minimum_size = Vector2(560, 0)
 	cc.add_child(pc)
 	var mg := MarginContainer.new()
@@ -184,7 +185,7 @@ func _build_pause_menu() -> Control:
 	_seg_style(resume, true)
 	v.add_child(resume)
 	v.add_child(_pbtn("الإعدادات", func(): open_settings(), Vector2(500, 52), 20, false))
-	v.add_child(_pause_head("الحفظ"))
+	v.add_child(_pause_head("الحفظ (يدوي فقط · لا حفظ تلقائي)"))
 	var r1 := HBoxContainer.new()
 	r1.add_theme_constant_override("separation", 10)
 	v.add_child(r1)
@@ -278,7 +279,9 @@ func _build_settings() -> void:
 	inner.add_child(_section("03", "متقدم"))
 	var lrow := HBoxContainer.new()
 	lrow.alignment = BoxContainer.ALIGNMENT_CENTER
-	lrow.add_child(_btn("سجل التشغيل (للدعم الفني)", func(): _open_log(), Vector2(320, 44), 17))
+	lrow.add_theme_constant_override("separation", 10)
+	lrow.add_child(_btn("سياسة الخصوصية", func(): open_privacy(), Vector2(220, 44), 17))
+	lrow.add_child(_btn("سجل التشغيل (للدعم الفني)", func(): _open_log(), Vector2(300, 44), 17))
 	inner.add_child(lrow)
 	_build_log_overlay()
 
